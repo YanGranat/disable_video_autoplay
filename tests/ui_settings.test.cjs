@@ -37,7 +37,7 @@ class FakeElement {
   focus() {}
 }
 
-async function createHarness(basename, stored = {}) {
+async function createHarness(basename, stored = {}, browserLanguage = "en") {
   if (!storageListeners.has(stored)) storageListeners.set(stored, new Set());
   if (!lockManagers.has(stored)) {
     const queues = new Map();
@@ -68,7 +68,7 @@ async function createHarness(basename, stored = {}) {
     addEventListener() {},
   };
   const chrome = {
-    i18n: { getUILanguage: () => "en" },
+    i18n: { getUILanguage: () => browserLanguage },
     storage: {
       onChanged: {
         addListener: (fn) => storageListeners.get(stored).add(fn),
@@ -108,7 +108,7 @@ async function createHarness(basename, stored = {}) {
   await new Promise((resolve) => setImmediate(resolve));
 
   return {
-    elements, writes, pendingReads, pendingTabQueries, pendingWrites, consoleEntries,
+    document, elements, writes, pendingReads, pendingTabQueries, pendingWrites, consoleEntries,
     deferReads() { deferReads = true; },
     deferTabQueries() { deferTabQueries = true; },
     failWrites(value = true) { failWrites = value; },
@@ -132,6 +132,25 @@ async function createHarness(basename, stored = {}) {
 
 async function flushMicrotasks() {
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
+}
+
+for (const surface of ["popup", "options"]) {
+  test(`${surface} renders browser and saved UI languages and observes language changes`, async () => {
+    const automatic = await createHarness(surface, { uiLanguage: "auto" }, "uk-UA");
+    assert.equal(automatic.document.documentElement.lang, "uk");
+    assert.equal(automatic.writes.length, 0);
+    const stored = { uiLanguage: "de" };
+    const harness = await createHarness(surface, stored, "es-ES");
+    assert.equal(harness.document.documentElement.lang, "de");
+    assert.equal(stored.uiLanguage, "de");
+    for (const language of ["es", "ru", "uk", "en", "de"]) {
+      harness.externalChange("uiLanguage", language);
+      await flushMicrotasks();
+      assert.equal(harness.document.documentElement.lang, language);
+      assert.equal(harness.elements.get("uiLanguageDropdown").getAttribute("data-value"), language);
+    }
+    assert.equal(harness.writes.length, 0);
+  });
 }
 
 test("status messages keep independent timers and replace or clear old messages", () => {

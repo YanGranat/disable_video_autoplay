@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Disable video autoplay"
+  },
+  "extensionDescription": {
+    "message": "Blockiert Video-Autoplay auf allen Websites oder nur auf ausgewählten Websites."
+  },
+  "actionTitle": {
+    "message": "Disable video autoplay"
+  }
+}

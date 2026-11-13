@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Disable video autoplay"
+  },
+  "extensionDescription": {
+    "message": "Bloquea la reproducción automática de vídeos en todos los sitios o solo en los que elijas."
+  },
+  "actionTitle": {
+    "message": "Disable video autoplay"
+  }
+}

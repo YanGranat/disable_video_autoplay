@@ -11,6 +11,7 @@ dev_docs/
 
 # Local work files
 temporary_files/
+store-preparation/
 
 # Dependencies
 node_modules/

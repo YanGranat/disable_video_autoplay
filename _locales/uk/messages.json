@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Disable video autoplay"
+  },
+  "extensionDescription": {
+    "message": "Блокує автовідтворення відео на всіх сайтах або лише на вибраних."
+  },
+  "actionTitle": {
+    "message": "Disable video autoplay"
+  }
+}

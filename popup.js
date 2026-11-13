@@ -1,4 +1,4 @@
-/* global $, YTAPSettings, YTAPSettingsStore, YTAPDiagnostics, YTAPStrings, YTAPChannelInput, detectBrowserLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability */
+/* global $, YTAPSettings, YTAPSettingsStore, YTAPDiagnostics, YTAPStrings, YTAPChannelInput, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability */
 
 const { defaults: DEFAULTS, normalizeChannel, normalizeSite, normalizeSiteLibrary, isDedicatedSite } = YTAPSettings;
 const { sanitizeDebugArgs } = YTAPDiagnostics;
@@ -36,7 +36,7 @@ async function renderSettings(data) {
   logPopup("load", data);
 
   const uiLanguage = data.uiLanguage || "auto";
-  const language = uiLanguage === "auto" ? detectBrowserLanguage() : uiLanguage;
+  const language = resolveUiLanguage(uiLanguage);
   if (language !== currentLang) { setStatus(""); setSiteStatus(""); }
   currentLang = language;
   t = makeTranslator(YTAPStrings, currentLang);

@@ -78,7 +78,20 @@ for (const basename of ["popup", "options"]) {
   const stringsContext = vm.createContext({});
   runScripts(stringsContext, [`ui/${basename}-strings.js`]);
   const strings = vm.runInContext("YTAPStrings", stringsContext);
-  assert.deepEqual(Object.keys(strings.ru).sort(), Object.keys(strings.en).sort(), `${basename} translation keys must match`);
+  for (const [locale, dictionary] of Object.entries(strings)) {
+    assert.deepEqual(Object.keys(dictionary).sort(), Object.keys(strings.en).sort(), `${basename}/${locale} translation keys must match`);
+    for (const [key, value] of Object.entries(dictionary)) {
+      assert.equal(typeof value, typeof strings.en[key], `${basename}/${locale}/${key} translation type must match`);
+      assert.equal(typeof (typeof value === "function" ? value(2) : value), "string");
+      assert.ok((typeof value === "function" ? value(2) : value).trim(), `${basename}/${locale}/${key} must not be empty`);
+    }
+  }
+  const languageContext = vm.createContext({});
+  runScripts(languageContext, ["shared.js"]);
+  const languages = vm.runInContext("Object.keys(UI_LANGUAGES)", languageContext);
+  assert.deepEqual(Object.keys(strings).sort(), Array.from(languages).sort(), `${basename} dictionaries must cover each supported language`);
+  const selectorValues = matches(html, /role="option"\s+data-value="([^"]+)"/g);
+  assert.deepEqual(selectorValues, ["auto", ...languages], `${basename} language choices must match the supported languages`);
   assert.match(html, /<title>[^<]+<\/title>/, `${basename}.html needs a document title`);
 
   const htmlIds = new Set(matches(html, /\bid="([^"]+)"/g));
@@ -90,7 +103,9 @@ for (const basename of ["popup", "options"]) {
   const translationKeys = new Set(matches(html, /\bdata-i18n(?:-placeholder|-aria-label)?="([^"]+)"/g));
   for (const key of translationKeys) {
     assert.ok(Object.hasOwn(strings.en, key), `${basename}.html uses missing English translation ${key}`);
-    assert.ok(Object.hasOwn(strings.ru, key), `${basename}.html uses missing Russian translation ${key}`);
+    for (const [locale, dictionary] of Object.entries(strings)) {
+      assert.ok(Object.hasOwn(dictionary, key), `${basename}.html uses missing ${locale} translation ${key}`);
+    }
   }
 
   for (const match of html.matchAll(/<([a-z][a-z0-9]*)\b[^>]*\bdata-i18n="([^"]+)"[^>]*>([^<]*)<\/\1>/gi)) {
@@ -144,11 +159,17 @@ for (const reference of readmeReferences) {
 }
 
 const localeEn = JSON.parse(read("_locales/en/messages.json"));
-const localeRu = JSON.parse(read("_locales/ru/messages.json"));
-assert.deepEqual(Object.keys(localeRu).sort(), Object.keys(localeEn).sort(), "manifest locale keys must match");
-for (const key of matches(JSON.stringify(manifest), /__MSG_([^_]+)__/g)) {
-  assert.ok(localeEn[key], `English manifest locale is missing ${key}`);
-  assert.ok(localeRu[key], `Russian manifest locale is missing ${key}`);
+const manifestLocales = fs.readdirSync(path.join(root, "_locales")).sort();
+const languageContext = vm.createContext({});
+runScripts(languageContext, ["shared.js"]);
+assert.deepEqual(manifestLocales, Array.from(vm.runInContext("Object.keys(UI_LANGUAGES)", languageContext)).sort());
+for (const locale of manifestLocales) {
+  const messages = JSON.parse(read(`_locales/${locale}/messages.json`));
+  assert.deepEqual(Object.keys(messages).sort(), Object.keys(localeEn).sort(), `${locale} manifest keys must match`);
+  for (const key of matches(JSON.stringify(manifest), /__MSG_([^_]+)__/g)) {
+    assert.ok(messages[key]?.message?.trim(), `${locale} manifest locale is missing ${key}`);
+  }
+  assert.ok(messages.extensionDescription.message.length <= 132);
 }
 
 process.stdout.write("PASS project defaults, UI bindings, translations, privacy settings, version, and locales\n");

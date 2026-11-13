@@ -3,17 +3,31 @@
  * Settings values, persistence and diagnostic privacy have separate owners.
  */
 /* global YTAPSettingsStore, YTAPSettings */
-/* exported detectBrowserLanguage, makeTranslator, applyI18n, createStatusSetter, initLanguageDropdown, createSettingsView, applySettingsAvailability */
+/* exported resolveUiLanguage, makeTranslator, applyI18n, createStatusSetter, initLanguageDropdown, createSettingsView, applySettingsAvailability */
 
 const $ = (id) => document.getElementById(id);
+
+const UI_LANGUAGES = Object.freeze({
+  de: "Deutsch",
+  en: "English",
+  es: "Español",
+  ru: "Русский",
+  uk: "Українська",
+});
 
 function detectBrowserLanguage() {
   try {
     const ui = (chrome.i18n && chrome.i18n.getUILanguage && chrome.i18n.getUILanguage()) || "";
-    if (ui.toLowerCase().startsWith("ru")) return "ru";
+    const language = ui.toLowerCase().split(/[-_]/)[0];
+    if (Object.hasOwn(UI_LANGUAGES, language)) return language;
   } catch {
   }
   return "en";
+}
+
+function resolveUiLanguage(value) {
+  if (!value || value === "auto") return detectBrowserLanguage();
+  return Object.hasOwn(UI_LANGUAGES, value) ? value : "en";
 }
 
 function makeTranslator(strings, lang) {
@@ -34,8 +48,7 @@ function setDropdownOpen(isOpen) {
 
 function getUiLanguageLabel(value, t) {
   if (value === "auto") return t("languageAuto");
-  if (value === "ru") return "Русский";
-  return "English";
+  return Object.hasOwn(UI_LANGUAGES, value) ? UI_LANGUAGES[value] : UI_LANGUAGES.en;
 }
 
 function setSelectedUiLanguage(value, t) {

@@ -12,7 +12,6 @@ A Chrome extension that blocks video autoplay on YouTube, Twitch, Kick, and othe
 - Allow YouTube playlists to continue automatically while keeping manually selected videos paused, or block playlist auto-next too.
 - Use standard pause behavior or an optional stop mode that also attempts to stop buffering. Audio elements are not blocked.
 - Optionally pause video when its tab is hidden and resume it when the tab becomes visible again.
-- English and Russian interfaces, with automatic browser-language selection and a manual override.
 
 The popup provides platform switches and controls for the current website. Advanced settings contain the website library, exceptions, and playback preferences. Settings are saved through Chrome Sync.
 

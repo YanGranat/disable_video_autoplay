@@ -1,4 +1,4 @@
-/* global $, YTAPSettings, YTAPSettingsStore, YTAPStrings, detectBrowserLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability */
+/* global $, YTAPSettings, YTAPSettingsStore, YTAPStrings, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability */
 
 const { normalizeSite, normalizeSiteLibrary, siteMatchesHostname, isDedicatedSite } = YTAPSettings;
 
@@ -23,12 +23,12 @@ async function recoverSettingsError() {
 function renderSettings(data) {
   currentSettings = data;
   const uiLanguage = data.uiLanguage || "auto";
-  const language = uiLanguage === "auto" ? detectBrowserLanguage() : uiLanguage;
+  const language = resolveUiLanguage(uiLanguage);
   if (language !== currentLang) { setSiteLibraryStatus(""); setExclusionStatus(""); }
   currentLang = language;
   t = makeTranslator(YTAPStrings, currentLang);
   document.documentElement.lang = currentLang;
-  document.title = `${t("title")} — ${currentLang === "ru" ? "Настройки" : "Options"}`;
+  document.title = `${t("title")} — ${t("optionsTitle")}`;
 
   setSelectedUiLanguage(uiLanguage, t);
   $("enabled").checked = data.enabled !== false;
