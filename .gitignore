@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Developer docs
+dev_docs/
+
+# Logs
+*.log
+
+# Local work files
+temporary_files/
+
+# Dependencies
+node_modules/
+
+# Local agent files
+.claude/
+.codex/
+.cursor/
+.agent/

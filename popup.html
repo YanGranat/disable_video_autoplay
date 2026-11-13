@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Disable video autoplay</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --surface2: #0f3460;
+      --accent: #d63c57;
+      --accent-hover: #c9324c;
+      --text: #eaeaea;
+      --text-dim: #8892a4;
+      --border: rgba(255,255,255,0.08);
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 340px;
+      font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .header-icon img {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+    }
+    .header p {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .section {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+    }
+    .toggle-row + .toggle-row {
+      margin-top: 3px;
+    }
+    .toggle-label {
+      font-size: 13px;
+    }
+
+    .dropdown {
+      position: relative;
+      width: 124px;
+      flex-shrink: 0;
+    }
+
+    .select-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius);
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+    .select-btn:hover {
+      border-color: rgba(233,69,96,0.55);
+      background: rgba(233,69,96,0.05);
+    }
+    .select-btn:focus-visible {
+      outline: 2px solid rgba(233,69,96,0.35);
+      outline-offset: 2px;
+    }
+    .select-btn .value {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .select-btn .chev {
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid rgba(234,234,234,0.9);
+      border-bottom: 2px solid rgba(234,234,234,0.9);
+      transform: translateY(-1px) rotate(45deg);
+      transition: transform 0.15s;
+    }
+    .dropdown.open .select-btn .chev {
+      transform: translateY(1px) rotate(-135deg);
+    }
+    .dropdown.open .select-btn {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      border-color: rgba(233,69,96,0.55);
+    }
+
+    .menu {
+      position: absolute;
+      right: 0;
+      top: 100%;
+      width: 100%;
+      background: rgba(22,33,62,0.95);
+      border: 1px solid var(--border);
+      border-top: 0;
+      border-radius: 0 0 var(--radius) var(--radius);
+      overflow: hidden;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.40);
+      display: none;
+      z-index: 10;
+      backdrop-filter: blur(8px);
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    .menu::-webkit-scrollbar { width: 4px; }
+    .menu::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.12);
+      border-radius: 4px;
+    }
+    .dropdown.open .menu { display: block; }
+
+    .menu-item {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      color: var(--text);
+      border: 0;
+      padding: 6px 10px;
+      font-size: 12px;
+      line-height: 1.2;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .menu-item:hover {
+      background: rgba(233,69,96,0.14);
+    }
+    .menu-item[aria-selected="true"] {
+      background: rgba(233,69,96,0.22);
+      color: #fff;
+    }
+
+    .switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: #3a3a5c;
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 3px;
+      top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .switch input:checked + .slider {
+      background: var(--accent);
+    }
+    .switch input:checked + .slider::before {
+      transform: translateX(18px);
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+
+    .add-row {
+      display: flex;
+      gap: 6px;
+    }
+    .add-row input {
+      flex: 1;
+      padding: 6px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .add-row input::placeholder { color: var(--text-dim); }
+    .add-row input:focus { border-color: var(--accent); }
+
+    .btn-add {
+      padding: 6px 10px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-add:hover { background: var(--accent-hover); }
+
+    .btn-secondary {
+      width: 100%;
+      padding: 7px 10px;
+      margin-top: 8px;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+    }
+    .btn-secondary:hover {
+      border-color: rgba(233,69,96,0.55);
+      background: rgba(233,69,96,0.10);
+    }
+    .btn-secondary:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .btn-secondary:focus-visible,
+    .btn-add:focus-visible,
+    .btn-remove:focus-visible,
+    .btn-link:focus-visible,
+    .footer-link:focus-visible,
+    .menu-item:focus-visible {
+      outline: 2px solid rgba(233,69,96,0.55);
+      outline-offset: 2px;
+    }
+
+    .switch input:focus-visible + .slider {
+      outline: 2px solid rgba(233,69,96,0.55);
+      outline-offset: 2px;
+    }
+
+    .current-site-card {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(22,33,62,0.65);
+    }
+    .current-site-host {
+      display: block;
+      overflow: hidden;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .current-site-mode {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-dim);
+      font-size: 11px;
+    }
+    .current-site-card .btn-secondary {
+      min-height: 44px;
+    }
+    .btn-link {
+      width: 100%;
+      min-height: 44px;
+      margin-top: 3px;
+      border: 0;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 11px;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    [hidden] { display: none !important; }
+
+    .status {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--text-dim);
+      min-height: 16px;
+    }
+    .input-error { color: var(--text); }
+    .add-row input[aria-invalid="true"] { border-color: var(--accent); }
+    .settings-error {
+      margin: 10px 16px;
+      padding: 8px 10px;
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      background: var(--surface);
+      font-size: 12px;
+    }
+
+    .channel-list {
+      list-style: none;
+      margin-top: 10px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .channel-list::-webkit-scrollbar { width: 4px; }
+    .channel-list::-webkit-scrollbar-thumb {
+      background: var(--surface2);
+      border-radius: 4px;
+    }
+
+    .channel-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      margin-top: 3px;
+      background: var(--surface);
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    .channel-item span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 8px;
+    }
+
+    .btn-remove {
+      width: auto;
+      min-width: 28px;
+      height: 28px;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 0 8px;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+    }
+    .btn-remove:hover {
+      color: var(--accent);
+      background: rgba(233,69,96,0.12);
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 12px;
+      padding: 10px 0 6px;
+      font-style: italic;
+    }
+
+    .footer {
+      padding: 8px 16px;
+      text-align: center;
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .footer-link {
+      display: inline-flex;
+      min-height: 32px;
+      align-items: center;
+      border: 0;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      font: inherit;
+      text-decoration: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    .is-disabled { opacity: .5; }
+    label[for] { cursor: pointer; }
+    button:disabled, input:disabled { cursor: default; }
+    .is-disabled label { cursor: default; }
+    button:disabled, input:not([type="checkbox"]):disabled { opacity: .5; }
+  </style>
+</head>
+<body>
+    <div class="header">
+      <div class="header-icon">
+      <img src="icons/icon32.png" alt="" aria-hidden="true" />
+      </div>
+      <div>
+      <h1 data-i18n="title">Disable video autoplay</h1>
+      <p data-i18n="subtitle">Disables video autoplay.</p>
+      </div>
+    </div>
+
+  <p id="settingsError" class="settings-error" role="alert" hidden></p>
+  <div class="section">
+    <div class="section-title" data-i18n="generalTitle">General settings</div>
+    <div class="toggle-row">
+      <span class="toggle-label" id="languageLabel" data-i18n="languageLabel">Language</span>
+      <div class="dropdown" id="uiLanguageDropdown">
+        <button class="select-btn" id="uiLanguageBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="uiLanguageMenu" aria-labelledby="languageLabel uiLanguageValue">
+          <span class="value" id="uiLanguageValue">Auto</span>
+          <span class="chev" aria-hidden="true"></span>
+        </button>
+        <div class="menu" id="uiLanguageMenu" role="listbox" tabindex="-1" aria-labelledby="languageLabel">
+          <button class="menu-item" type="button" role="option" data-value="auto" aria-selected="false" data-i18n="languageAuto">Auto</button>
+          <button class="menu-item" type="button" role="option" data-value="en" aria-selected="false">English</button>
+          <button class="menu-item" type="button" role="option" data-value="ru" aria-selected="false">Русский</button>
+        </div>
+      </div>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="enabled" data-i18n="enabledLabel">Enabled</label>
+      <label class="switch">
+        <input type="checkbox" id="enabled" data-i18n-aria-label="enabledLabel" />
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title" data-i18n="youtubeTitle">YouTube</div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="applyToYouTube" data-i18n="applyToYouTubeLabel">Disable autoplay on YouTube</label>
+      <label class="switch">
+        <input type="checkbox" id="applyToYouTube" data-i18n-aria-label="applyToYouTubeLabel" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="applyToPlaylists" data-i18n="applyToPlaylistsLabel">Pause playlist auto-next</label>
+      <label class="switch">
+        <input type="checkbox" id="applyToPlaylists" data-i18n-aria-label="applyToPlaylistsLabel" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="applyToShorts" data-i18n="applyToShortsLabel">Apply to Shorts</label>
+      <label class="switch">
+        <input type="checkbox" id="applyToShorts" data-i18n-aria-label="applyToShortsLabel" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="ignoreMiniplayer" data-i18n="ignoreMiniplayerLabel">Ignore miniplayer &amp; PiP</label>
+      <label class="switch">
+        <input type="checkbox" id="ignoreMiniplayer" data-i18n-aria-label="ignoreMiniplayerLabel" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="section-title" style="margin-top:12px" data-i18n="allowlistTitle">Channel allowlist</div>
+    <div class="add-row">
+      <input id="newItem" maxlength="2048" placeholder="/@handle" data-i18n-placeholder="allowlistPlaceholder" aria-label="Channel allowlist" data-i18n-aria-label="allowlistTitle" aria-describedby="channelInputError" />
+      <button class="btn-add" id="addBtn" data-i18n="addBtn">Add</button>
+    </div>
+    <div class="status input-error" id="channelInputError" role="alert" data-i18n="channelInputInvalid" hidden>Enter a YouTube @handle or channel URL.</div>
+    <button class="btn-secondary" id="addCurrentBtn" data-i18n="addCurrentBtn">Allowlist current channel</button>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <ul class="channel-list" id="list"></ul>
+  </div>
+
+  <div class="section">
+    <div class="section-title" data-i18n="otherSitesTitle">Other sites</div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="applyToOtherSites" data-i18n="applyToOtherSitesLabel">Block video autoplay on all other websites</label>
+      <label class="switch">
+        <input type="checkbox" id="applyToOtherSites" data-i18n-aria-label="applyToOtherSitesLabel" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="applyToTwitch" data-i18n="applyToTwitchLabel">Disable autoplay on Twitch</label>
+      <label class="switch">
+        <input type="checkbox" id="applyToTwitch" data-i18n-aria-label="applyToTwitchLabel" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="applyToKick" data-i18n="applyToKickLabel">Disable autoplay on Kick</label>
+      <label class="switch">
+        <input type="checkbox" id="applyToKick" data-i18n-aria-label="applyToKickLabel" />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="current-site-card" id="currentSiteCard" hidden>
+      <div class="section-title" id="currentSiteTitle" data-i18n="currentSiteTitle">Current site</div>
+      <div id="currentSiteDetails">
+        <span class="current-site-host" id="currentSiteHost">...</span>
+        <span class="current-site-mode" id="currentSiteMode"></span>
+        <button class="btn-secondary" id="toggleCurrentSiteBtn" type="button" disabled></button>
+      </div>
+      <button class="btn-link" id="manageSiteLibraryBtn" type="button"></button>
+      <div class="status" id="siteStatus" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title" data-i18n="debugTitle">Debug</div>
+    <div class="toggle-row">
+      <label class="toggle-label" for="debug" data-i18n="debugLabel">Debug logs</label>
+      <label class="switch">
+        <input type="checkbox" id="debug" data-i18n-aria-label="debugLabel" />
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div>
+      <button class="footer-link" id="openOptions" type="button" data-i18n="advancedLink">Advanced settings</button>
+    </div>
+  </div>
+
+  <script src="vendor/domain-parser.js"></script>
+  <script src="core/site-context.js"></script>
+  <script src="core/settings.js"></script>
+  <script src="core/diagnostics.js"></script>
+  <script src="adapters/settings-store.js"></script>
+  <script src="adapters/channel-input.js"></script>
+  <script src="shared.js"></script>
+  <script src="ui/popup-strings.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

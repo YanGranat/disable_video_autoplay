@@ -1,0 +1,25 @@
+{
+  "name": "disable-video-autoplay",
+  "version": "1.3.45",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "build:check": "node scripts/build.cjs --check",
+    "lint": "eslint .",
+    "test": "node --test tests/*.test.cjs",
+    "check": "npm run lint && npm run build:check && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "tldts": "7.5.1"
+  },
+  "overrides": {
+    "eslint": { "minimatch": "11.0.1" },
+    "@eslint/config-array": { "minimatch": "11.0.1" }
+  }
+}
