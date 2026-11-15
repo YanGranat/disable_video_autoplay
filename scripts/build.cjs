@@ -4,7 +4,7 @@ const path = require("node:path");
 const root = path.join(__dirname, "..");
 const shared = ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/diagnostics.js", "core/playback-policy.js", "adapters/page-context.js"];
 const bundles = Object.freeze({
-  "dist/main.js": [...shared, "core/media-policy.js", "core/media-evidence.js", "adapters/media-source.js", "adapters/player-dom.js", "adapters/visibility-playback.js", "adapters/youtube-channel.js", "content_main.js"],
+  "dist/main.js": [...shared, "core/media-policy.js", "core/media-evidence.js", "adapters/media-source.js", "adapters/playback-diagnostics.js", "adapters/player-dom.js", "adapters/visibility-playback.js", "adapters/youtube-channel.js", "content_main.js"],
   "dist/content.js": [...shared, "adapters/settings-store.js", "content.js"],
 });
 

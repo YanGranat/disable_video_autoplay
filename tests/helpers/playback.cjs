@@ -48,7 +48,7 @@ function createMediaTypes() {
         return Promise.resolve();
       }
       this.paused = false;
-      return Promise.resolve();
+      return this.nativePlayPromise || Promise.resolve();
     }
 
     pause() {

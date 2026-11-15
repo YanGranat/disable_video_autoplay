@@ -12,7 +12,11 @@ test("lint configuration checks browser and CommonJS code with the complexity li
   const branches = Array.from({ length: 25 }, (_, i) => `if (value === ${i}) return ${i};`).join("\n");
   const complex = await eslint.lintText(`window.probe = function (value) { ${branches} return -1; };`, { filePath: "content_main.js" });
   assert.ok(complex[0].messages.some(message => message.ruleId === "complexity"));
-  for (const file of ["dist/main.js", "vendor/domain-parser.js", "node_modules/probe.js", "temporary_files/probe.js"]) {
+  for (const file of ["dist/main.js", "vendor/domain-parser.js", "node_modules/probe.js", "temporary_files/probe.js", "store-preparation/probe.cjs"]) {
     assert.equal(await eslint.isPathIgnored(file), true, file);
   }
+  const product = await eslint.lintText("const =;", { filePath: "adapters/probe.js" });
+  assert.equal(product[0].fatalErrorCount, 1);
+  const local = await eslint.lintText("const =;", { filePath: "store-preparation/probe.cjs" });
+  assert.equal(local[0].fatalErrorCount, 0);
 });

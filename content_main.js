@@ -1,4 +1,4 @@
-/* global YTAPSettings, YTAPDiagnostics, YTAPPlaybackPolicy, YTAPMediaEvidence, YTAPVisibilityPlayback, YTAPPlayerDom, YTAPPageContext, YTAPSiteContext, YTAPMediaSource, YTAPYouTubeChannel */
+/* global YTAPSettings, YTAPDiagnostics, YTAPPlaybackDiagnostics, YTAPPlaybackPolicy, YTAPMediaEvidence, YTAPVisibilityPlayback, YTAPPlayerDom, YTAPPageContext, YTAPSiteContext, YTAPMediaSource, YTAPYouTubeChannel */
 
 (() => {
   "use strict";
@@ -25,6 +25,17 @@
 
   const originalPlay = HTMLMediaElement.prototype.play;
   const mediaSources = YTAPMediaSource.create();
+  const playbackDiagnostics = YTAPPlaybackDiagnostics.create({
+    mediaPrototype: HTMLMediaElement.prototype,
+    elementPrototype: typeof Element === "function" ? Element.prototype : null,
+    now: nowMs, emit: log, MutationObserver, setTimeout, clearTimeout,
+    snapshot: video => [
+      `mediaId=${mediaDebugId(video)}`, `sourceId=${mediaSourceDebugSnapshot(video).sourceId}`,
+      `paused=${video.paused}`, `readyState=${video.readyState}`,
+      `time=${Number.isFinite(video.currentTime) ? video.currentTime.toFixed(2) : "unknown"}`,
+      ...youtubeDebugFields(video),
+    ],
+  });
 
   // ---------------------------------------------------------------------------
   // Timing constants (ms)
@@ -277,6 +288,7 @@
     visibilityPlayback.cancel();
     pendingYouTubePlay = null;
     youtubePlayDebugWindows = new WeakMap();
+    playbackDiagnostics.reset();
     const previousRouteKey = mediaRouteScope.routeKey;
     mediaRouteScope = {
       routeKey,
@@ -733,6 +745,7 @@
     return [
       `atMs=${Math.round(nowMs())}`,
       `duration=${Number.isFinite(video.duration) ? video.duration.toFixed(2) : "unknown"}`,
+      `mediaErrorCode=${video.error == null ? 0 : [1, 2, 3, 4].includes(video.error.code) ? video.error.code : "unknown"}`,
       `adShowing=${diagnostic.adShowing}`,
       `controllerContent=${diagnostic.content}`,
       `assignedMatchesCurrent=${video.src && video.currentSrc ? video.src === video.currentSrc : "unknown"}`,
@@ -757,6 +770,7 @@
 
     const events = [
       "play",
+      "loadstart",
       "playing",
       "pause",
       "waiting",
@@ -772,6 +786,8 @@
       "ended",
       "stalled",
       "suspend",
+      "abort",
+      "error",
       "ratechange",
     ];
 
@@ -987,6 +1003,7 @@
 
   function tracePlayRequest(video, seq, media, source, facts, decision) {
     if (!debug) return;
+    playbackDiagnostics.recordPlay(video);
     flow("play()", `seq=${seq}`, `decision=${decision}`, `mediaId=${media.mediaId}`,
       `sourceId=${source.sourceId}`, `armed=${facts.armed}`, `pausedOnce=${state.pausedOnce}`,
       `userAllowed=${facts.userAllowed}`, `pausedCarryover=${facts.carryover}`, `paused=${video.paused}`,
@@ -998,6 +1015,7 @@
     markUserStarted(video, `${decision}#${seq}`);
     if (decision === "recent-area-click") gesture.lastInPlayerAreaAt = 0;
     prepareUserPlayback(video);
+    if (debug && isYouTubeHost()) playbackDiagnostics.begin(video);
     const promise = originalPlay.apply(video, args);
     if (decision === "recent-area-click" && isTwitchHost()) scheduleTwitchUserStartRetry(video, seq, gesture.lastAnyAt);
     const reason = { "selected-controller": "selected-controller-play", "carryover-gesture": "carryover-controller-play", "user-gesture": "controller-play" }[decision];
@@ -1520,53 +1538,31 @@
     if (repeated) {
       const window = youtubePlayDebugWindows.get(video);
       const age = window ? startedAt - window.at : Infinity;
-      if (!window || window.routeKey !== routeKey || age < 0 || age > 5000 || window.remaining <= 0) return;
+      if (!window || window.routeKey !== routeKey || age < 0 || age >= 5000 || window.remaining <= 0) return;
       window.remaining--;
     } else {
       youtubePlayDebugWindows.set(video, { routeKey, at: startedAt, remaining: 8 });
     }
     const pointerSeq = gesture.pointerSeq;
     const playSeq = state.playSeq;
+    const window = youtubePlayDebugWindows.get(video);
+    const generation = mediaRouteScope.generation;
     const sourceId = mediaSourceDebugSnapshot(video).sourceId;
-    Promise.resolve(playPromise).then(
-      () => {
-        log(
-          "YouTube manual play result",
-          `reason=${reason}`,
-          `pointerSeq=${pointerSeq}`,
-          "outcome=resolved",
-          `paused=${video.paused}`,
-          `readyState=${video.readyState}`,
-          `sameRoute=${currentRouteKey() === routeKey}`,
-          `samePointer=${gesture.pointerSeq === pointerSeq}`,
-          `mediaId=${mediaDebugId(video)}`,
-          `sourceId=${sourceId}`,
-          `elapsedMs=${Math.max(0, Math.round(nowMs() - startedAt))}`,
-          `playSeq=${playSeq}`,
-          ...youtubeDebugFields(video)
-        );
-      },
-      (error) => {
-        const errorName = ["AbortError", "InvalidStateError", "NotAllowedError", "NotSupportedError"]
-          .includes(error?.name) ? error.name : "other";
-        log(
-          "YouTube manual play result",
-          `reason=${reason}`,
-          `pointerSeq=${pointerSeq}`,
-          "outcome=rejected",
-          `error=${errorName}`,
-          `paused=${video.paused}`,
-          `readyState=${video.readyState}`,
-          `sameRoute=${currentRouteKey() === routeKey}`,
-          `samePointer=${gesture.pointerSeq === pointerSeq}`,
-          `mediaId=${mediaDebugId(video)}`,
-          `sourceId=${sourceId}`,
-          `elapsedMs=${Math.max(0, Math.round(nowMs() - startedAt))}`,
-          `playSeq=${playSeq}`,
-          ...youtubeDebugFields(video)
-        );
-      }
-    );
+    function report(outcome, error) {
+      if (!debug || youtubePlayDebugWindows.get(video) !== window || mediaRouteScope.generation !== generation
+        || currentRouteKey() !== routeKey || nowMs() - window.at >= 5000) return;
+      const errorName = ["AbortError", "InvalidStateError", "NotAllowedError", "NotSupportedError"]
+        .includes(error?.name) ? error.name : "other";
+      log("YouTube manual play result", `reason=${reason}`, `pointerSeq=${pointerSeq}`, `outcome=${outcome}`,
+        ...(outcome === "rejected" ? [`error=${errorName}`] : []),
+        `paused=${video.paused}`, `readyState=${video.readyState}`,
+        `sameRoute=${currentRouteKey() === routeKey}`, `samePointer=${gesture.pointerSeq === pointerSeq}`,
+        `mediaId=${mediaDebugId(video)}`, `sourceId=${sourceId}`,
+        `settledSourceId=${mediaSourceDebugSnapshot(video).sourceId}`,
+        `elapsedMs=${Math.max(0, Math.round(nowMs() - startedAt))}`, `playSeq=${playSeq}`,
+        ...youtubeDebugFields(video));
+    }
+    Promise.resolve(playPromise).then(() => report("resolved"), error => report("rejected", error));
   }
 
   function observeGesture(e, kind, path) {
@@ -1790,7 +1786,10 @@
     const wasCovered = shouldArmForUrl();
 
     if (typeof detail.debug === "boolean") debug = detail.debug;
-    if (!debug) youtubePlayDebugWindows = new WeakMap();
+    if (!debug) {
+      youtubePlayDebugWindows = new WeakMap();
+      playbackDiagnostics.reset();
+    }
     if (detail.settingsReady === true) cfg.settingsReady = true;
     flow("ytap-config", `ownerSource=${debug ? pageContext.getRuntimeLocation().ownerSource : "not-collected"}`, {
       version: detail.extensionVersion,
@@ -1805,7 +1804,10 @@
     if (!cfg.enabled || !cfg.pauseOnHidden || !cfg.resumeOnVisible || !shouldArmForUrl()) {
       visibilityPlayback.cancel();
     }
-    if (!cfg.enabled || !shouldArmForUrl()) pendingYouTubePlay = null;
+    if (!cfg.enabled || !shouldArmForUrl()) {
+      pendingYouTubePlay = null;
+      playbackDiagnostics.reset();
+    }
 
     // The URL poll normally delivers config after a Twitch/Kick SPA transition.
     // Reconcile here too, while play()/playing guards remain the synchronous

@@ -102,3 +102,64 @@ test("YouTube playback remains passive with diagnostic logging off", async () =>
   assert.equal(h.video.pauseCalls, 0);
   assert.equal(h.consoleEntries.length, 0);
 });
+
+test("manual source-reset observation starts before native Play and cancels on Debug or route change", async () => {
+  for (const cancel of ["debug-off", "route-return"]) {
+    const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=one", debug: true });
+    playerFor(h);
+    await assert.rejects(h.video.play(), { name: "NotAllowedError" });
+    h.advanceTime(10);
+    const originalPause = Object.getPrototypeOf(Object.getPrototypeOf(h.video)).pause;
+    h.windowTarget.dispatchEvent(trustedPlayerPointer(h.video));
+    const promise = h.video.play();
+    h.video.currentSrc = "blob:independent-resource";
+    await assert.doesNotReject(promise);
+    h.video.pause();
+    let text = copiedConsoleText(h.consoleEntries);
+    assert.match(text, /YouTube media observation.*windowMs=5000.*limit=24/);
+    assert.match(text, /YouTube media operation.*operation=pause.*mediaId=m\d/);
+    assert.match(text, /manual play result.*sourceId=s1.*settledSourceId=s2/);
+    const before = (text.match(/YouTube media operation /g) || []).length;
+    if (cancel === "debug-off") {
+      for (const debug of [false, true]) h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-config", { detail: { debug } }));
+    } else {
+      for (const id of ["two", "one"]) {
+        h.location.search = "?v=" + id;
+        h.location.href = "https://www.youtube.com/watch?v=" + id;
+        h.windowTarget.dispatchEvent(new FakeCustomEvent("yt-navigate-start"));
+      }
+    }
+    h.video.pause();
+    text = copiedConsoleText(h.consoleEntries);
+    assert.equal((text.match(/YouTube media operation /g) || []).length, before);
+    assert.equal(Object.getPrototypeOf(Object.getPrototypeOf(h.video)).pause, originalPause);
+    assert.equal(h.video.playCalls, 1);
+    assert.equal(h.video.pauseCalls, 2);
+  }
+});
+
+test("late native settlements cannot be attributed to a cancelled diagnostic window", async () => {
+  for (const cancel of ["expiry", "debug-off", "route-return"]) {
+    const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=one", debug: true });
+    playerFor(h);
+    await assert.rejects(h.video.play(), { name: "NotAllowedError" });
+    h.advanceTime(10);
+    h.windowTarget.dispatchEvent(trustedPlayerPointer(h.video));
+    let resolve;
+    h.video.nativePlayPromise = new Promise(done => { resolve = done; });
+    const promise = h.video.play();
+    assert.equal(promise, h.video.nativePlayPromise);
+    if (cancel === "expiry") h.advanceTime(5000);
+    else if (cancel === "debug-off") {
+      for (const debug of [false, true]) h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-config", { detail: { debug } }));
+    } else for (const id of ["two", "one"]) {
+      h.location.search = "?v=" + id;
+      h.location.href = "https://www.youtube.com/watch?v=" + id;
+      h.windowTarget.dispatchEvent(new FakeCustomEvent("yt-navigate-start"));
+    }
+    resolve();
+    await assert.doesNotReject(promise);
+    assert.doesNotMatch(copiedConsoleText(h.consoleEntries), /manual play result/);
+    assert.equal(h.video.playCalls, 1);
+  }
+});
