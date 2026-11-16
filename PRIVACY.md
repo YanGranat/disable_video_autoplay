@@ -1,6 +1,6 @@
 # Privacy Policy (Disable video autoplay)
 
-Last updated: 2026-11-13
+Last updated: 2026-11-16
 
 ## Summary
 
@@ -56,7 +56,7 @@ YouTube receives the requested channel address and standard network information,
 
 ## Diagnostics and retention
 
-Debug logs are optional and stay in the local browser console. Before writing diagnostic values, the extension redacts page URLs, page-provided media and playlist identifiers, channel entries, and saved website rules. The user can enable or disable these logs in the popup or options page.
+Debug logs are optional and stay in the local browser console. Before writing diagnostic values, the extension redacts page URLs, page-provided media and playlist identifiers, channel entries, and saved website rules. The user can enable or disable these logs in advanced settings.
 
 Playback state is held temporarily for the current page and media lifecycle, not saved as browsing history. Preferences remain in Chrome storage until changed or removed. Website and channel rules can be deleted in the extension settings. Chrome controls the retention and deletion of synchronized settings; browser controls also determine how long console logs remain available.
 

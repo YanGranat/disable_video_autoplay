@@ -2,6 +2,8 @@
 
 A Chrome extension that blocks video autoplay on YouTube, Twitch, Kick, and other websites.
 
+[Available in the Chrome Web Store](https://chromewebstore.google.com/detail/disable-video-autoplay/bnjbdafhecleblodpjljinjadieolgja)
+
 ![Stop video autoplay and keep control of playback](docs/illustrations/hero.png)
 
 ## Features

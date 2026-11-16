@@ -252,6 +252,52 @@ test("popup current-site status does not claim blocking when the master switch i
   assert.equal(ui.elements.get("currentSiteMode").textContent, "Autoplay blocking is off on this site.");
 });
 
+test("popup retains the current-site card during an active-tab refresh", async () => {
+  const ui = await createHarness("popup");
+  const card = ui.elements.get("currentSiteCard");
+  const details = ui.elements.get("currentSiteDetails");
+  const host = ui.elements.get("currentSiteHost");
+  const mode = ui.elements.get("currentSiteMode");
+  const toggle = ui.elements.get("toggleCurrentSiteBtn");
+  const previousHost = host.textContent;
+  const previousMode = mode.textContent;
+  ui.deferTabQueries();
+  const save = ui.change("applyToTwitch", false);
+  await flushMicrotasks();
+
+  assert.equal(ui.pendingTabQueries.length, 1);
+  assert.equal(card.hidden, false, "pending settings updates must not collapse the card");
+  assert.equal(details.hidden, false);
+  assert.equal(host.textContent, previousHost);
+  assert.equal(mode.textContent, previousMode);
+  assert.equal(toggle.hidden, false);
+  assert.equal(toggle.disabled, true, "the site action must wait for the current tab");
+  const writesBeforeClick = ui.writes.length;
+  await ui.click("toggleCurrentSiteBtn");
+  assert.equal(ui.writes.length, writesBeforeClick, "a pending tab lookup must not edit the previous website");
+  ui.pendingTabQueries[0]();
+  await save;
+  assert.equal(card.hidden, false);
+  assert.equal(toggle.disabled, false);
+  assert.equal(host.textContent, previousHost);
+});
+
+test("debug remains an advanced setting and is preserved by popup changes", async () => {
+  const stored = {};
+  const popup = await createHarness("popup", stored);
+  const options = await createHarness("options", stored);
+  assert.equal(popup.elements.has("debug"), false);
+  assert.equal(options.elements.has("debug"), true);
+  await options.change("debug", true);
+  await flushMicrotasks();
+  await popup.change("applyToTwitch", false);
+  assert.equal(stored.debug, true);
+  assert.equal(options.elements.get("debug").checked, true);
+  assert.ok(popup.consoleEntries.some((args) => args.includes("saveFlags")));
+  await options.change("debug", false);
+  assert.equal(stored.debug, false);
+});
+
 test("popup current-site status ignores a superseded active-tab response", async () => {
   const ui = await createHarness("popup");
   ui.deferTabQueries();
@@ -371,7 +417,7 @@ test("master off disables playback controls without losing their stored values",
     await ui.change("enabled", false);
     for (const key of ["applyToYouTube", "applyToOtherSites", "applyToShorts", "applyToTwitch"]) assert.equal(ui.elements.get(key).disabled, true, key);
     assert.equal(ui.elements.get("applyToShorts").checked, true);
-    assert.equal(ui.elements.get("debug").disabled, undefined);
+    if (basename === "options") assert.equal(ui.elements.get("debug").disabled, undefined);
     await ui.change("enabled", true);
     assert.equal(ui.elements.get("applyToShorts").disabled, false);
   }

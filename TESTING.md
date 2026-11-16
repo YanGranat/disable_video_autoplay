@@ -19,7 +19,7 @@ Core tests run without a browser or DOM. They cover scope decisions, exact gestu
 1. Open `chrome://extensions`.
 2. Reload the unpacked extension.
 3. Reload every website tab used for testing. An already open tab otherwise keeps the previous content scripts.
-4. Enable **Debug logs** for the test run.
+4. Open advanced settings and enable **Debug logs** for the test run.
 5. In debug output, confirm that the plain-text version after `[YT-AP ISOLATED]` matches the extension card.
 
 ## YouTube
@@ -112,7 +112,7 @@ Core tests run without a browser or DOM. They cover scope decisions, exact gestu
    - Restart the background worker with the master switch off. Its toolbar icon must return to the disabled appearance without another toggle.
 8. Geometry not measured for that platform must show `overVideoRect=unknown`, not `false`. Recovery scheduling and execution must retain `mediaId` and `pointerSeq` in plain text, and the input summary must retain `playLike`/`nonPlayLike` without exposing labels.
 9. Replace a temporary status message before it expires: the previous timer must not clear the new message or another status area. Popup messages last 3500 ms and options messages last 4000 ms. Free-form channel input must stay redacted in popup logs even without a recognized channel-path prefix.
-10. Click the text label of each switch. With the master off, dependent controls must be disabled and dimmed without losing their values. Language and debug controls remain available. Keep two settings windows open: flag, list, and language changes must appear without reopening either window or clearing drafts.
+10. Click the text label of each switch. With the master off, dependent controls must be disabled and dimmed without losing their values. Language controls, advanced settings, and the debug control in advanced settings remain available. Keep two settings windows open: flag, list, and language changes must appear without reopening either window or clearing drafts. While a popup flag is being saved, the current-site card must stay visible and the scroll position must not jump because the card was temporarily removed.
 11. Reject malformed domains, bare public suffixes (`com`, `co.uk`), and private suffixes (`github.io`); accept valid domains, IDNs, IP addresses, and localhost. Reject overlong channel handles without stretching the popup. Resolve a legacy channel URL, then retry with the network unavailable: show a translated error and keep the input. Read an unavailable current channel: show a useful recovery instruction, not the raw browser error.
 12. With Debug off, `ytap-config` must not contain `extensionVersion`. Ordinary gestures must not emit `ytap-gesture`; a trusted primary YouTube watch-link activation must still provide target-specific navigation intent.
 

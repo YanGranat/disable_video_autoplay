@@ -53,7 +53,6 @@ async function renderSettings(data) {
   $("applyToTwitch").checked = !!data.applyToTwitch;
   $("applyToKick").checked = !!data.applyToKick;
   $("applyToOtherSites").checked = data.applyToOtherSites !== false;
-  $("debug").checked = !!data.debug;
   applyI18n(t);
   renderList(data.allowlist || []);
   applySettingsAvailability(data);
@@ -72,17 +71,15 @@ async function renderCurrentSite(data) {
   const library = normalizeSiteLibrary(data.siteLibrary);
 
   currentSite = "";
-  card.hidden = true;
-  detailsEl.hidden = true;
-  hostEl.textContent = t("currentSiteChecking");
-  modeEl.textContent = "";
-  toggleBtn.hidden = true;
   toggleBtn.disabled = true;
-  manageBtn.textContent = t("manageSiteLibrary", library.length + normalizeSiteLibrary(data.siteExclusions).length);
 
   const tab = await getActiveTab();
   // A later refresh owns the card even if this tab lookup finishes last.
   if (requestId !== currentSiteRequestId) return;
+  // Keep the previous layout until the replacement can be painted together.
+  detailsEl.hidden = true;
+  toggleBtn.hidden = true;
+  manageBtn.textContent = t("manageSiteLibrary", library.length + normalizeSiteLibrary(data.siteExclusions).length);
   const tabUrl = tab?.url || "";
   if (!/^https?:\/\//i.test(tabUrl)) {
     titleEl.textContent = t("siteLibraryCardTitle");
@@ -165,7 +162,6 @@ async function saveFlags(event) {
   // Capture currentTarget before awaiting: DOM events clear it after dispatch.
   const id = event.currentTarget.id;
   const payload = { [id]: event.currentTarget.checked };
-  if (id === "debug") popupDebugEnabled = payload.debug;
   logPopup("saveFlags", payload);
   await settingsView.save(id, payload[id]);
 }
@@ -260,7 +256,6 @@ $("applyToTwitch").addEventListener("change", safeAction(saveFlags));
 $("applyToKick").addEventListener("change", safeAction(saveFlags));
 $("applyToOtherSites").addEventListener("change", safeAction(saveFlags));
 $("ignoreMiniplayer").addEventListener("change", safeAction(saveFlags));
-$("debug").addEventListener("change", safeAction(saveFlags));
 $("addBtn").addEventListener("click", safeAction(addItem));
 $("newItem").addEventListener("input", () => {
   $("newItem").setAttribute("aria-invalid", "false");

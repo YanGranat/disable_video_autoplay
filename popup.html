@@ -291,7 +291,7 @@
 
     .current-site-card {
       margin-top: 10px;
-      padding: 10px;
+      padding: 10px 10px 6px;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: rgba(22,33,62,0.65);
@@ -313,6 +313,9 @@
     }
     .current-site-card .btn-secondary {
       min-height: 44px;
+    }
+    .current-site-card .status {
+      margin-top: 2px;
     }
     .btn-link {
       width: 100%;
@@ -403,21 +406,29 @@
     }
 
     .footer {
-      padding: 8px 16px;
-      text-align: center;
+      display: flex;
+      padding: 4px 16px;
       font-size: 10px;
       color: var(--text-dim);
     }
     .footer-link {
-      display: inline-flex;
+      display: flex;
+      width: 100%;
       min-height: 32px;
       align-items: center;
+      justify-content: center;
       border: 0;
+      border-radius: 6px;
       background: transparent;
       color: var(--text-dim);
       cursor: pointer;
       font: inherit;
       text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+    .footer-link:hover {
+      background: var(--surface);
+      color: var(--text);
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -550,21 +561,8 @@
     </div>
   </div>
 
-  <div class="section">
-    <div class="section-title" data-i18n="debugTitle">Debug</div>
-    <div class="toggle-row">
-      <label class="toggle-label" for="debug" data-i18n="debugLabel">Debug logs</label>
-      <label class="switch">
-        <input type="checkbox" id="debug" data-i18n-aria-label="debugLabel" />
-        <span class="slider"></span>
-      </label>
-    </div>
-  </div>
-
   <div class="footer">
-    <div>
-      <button class="footer-link" id="openOptions" type="button" data-i18n="advancedLink">Advanced settings</button>
-    </div>
+    <button class="footer-link" id="openOptions" type="button" data-i18n="advancedLink">Advanced settings</button>
   </div>
 
   <script src="vendor/domain-parser.js"></script>
