@@ -151,8 +151,8 @@ function renderList(items) {
     btn.title = t("removeTitle");
     btn.setAttribute("aria-label", `${t("removeTitle")}: ${item}`);
     btn.addEventListener("click", safeAction(async () => {
-      const next = await YTAPSettingsStore.updateList("allowlist", (items) => (items || []).map(normalizeChannel).filter((x) => x && x !== item));
-      renderList(next);
+      await YTAPSettingsStore.updateList("allowlist", (items) => (items || []).map(normalizeChannel).filter((x) => x && x !== item));
+      await load();
     }));
 
     li.appendChild(span);
@@ -200,9 +200,9 @@ async function addItem() {
     $("channelInputError").textContent = t("channelResolveFailed");
     return;
   }
-  const next = await YTAPSettingsStore.updateList("allowlist", (items) => Array.from(new Set([...(items || []).map(normalizeChannel).filter(Boolean), resolved])));
+  await YTAPSettingsStore.updateList("allowlist", (items) => Array.from(new Set([...(items || []).map(normalizeChannel).filter(Boolean), resolved])));
   if (normalizeChannel($("newItem").value) === value) $("newItem").value = "";
-  renderList(next);
+  await load();
   setStatus(t("statusAdded", decodeURIComponent(resolved)));
   logPopup("allowlist:add", { channel: value });
 }
@@ -245,8 +245,8 @@ async function addCurrentChannel() {
     return;
   }
 
-  const next = await YTAPSettingsStore.updateList("allowlist", (items) => Array.from(new Set([...(items || []).map(normalizeChannel).filter(Boolean), value])));
-  renderList(next);
+  await YTAPSettingsStore.updateList("allowlist", (items) => Array.from(new Set([...(items || []).map(normalizeChannel).filter(Boolean), value])));
+  await load();
 
   setStatus(t("statusAllowlisted", channel));
   btn.disabled = false;

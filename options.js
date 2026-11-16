@@ -120,13 +120,13 @@ async function addSite(excluded = false) {
 
   if (normalizeSite(input.value) === site) input.value = "";
   input.setAttribute("aria-invalid", "false");
-  renderSiteLibrary(next, excluded);
+  await load();
   status(t("siteLibraryAdded", site));
 }
 
 async function removeSite(site, excluded = false) {
-  const next = await YTAPSettingsStore.updateList(excluded ? "siteExclusions" : "siteLibrary", (items) => normalizeSiteLibrary(items).filter((item) => item !== site));
-  renderSiteLibrary(next, excluded);
+  await YTAPSettingsStore.updateList(excluded ? "siteExclusions" : "siteLibrary", (items) => normalizeSiteLibrary(items).filter((item) => item !== site));
+  await load();
   (excluded ? setExclusionStatus : setSiteLibraryStatus)(t("siteLibraryRemoved", site));
 }
 

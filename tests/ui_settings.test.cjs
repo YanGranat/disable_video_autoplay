@@ -24,6 +24,9 @@ class FakeElement {
     };
   }
 
+  set innerHTML(value) { this.html = value; this.children = []; }
+  get innerHTML() { return this.html || ""; }
+
   addEventListener(type, callback) {
     const callbacks = this.listeners.get(type) || [];
     callbacks.push(callback);
@@ -404,3 +407,56 @@ test("a later storage event wins after a pending flag write completes", async ()
   await save;
   assert.equal(ui.elements.get("debug").checked, false);
 });
+
+for (const [surface, inputId, actionId, key, listId, added, latest] of [
+  ["options", "siteInput", "siteAddBtn", "siteLibrary", "siteLibraryList", "first.example", "latest.example"],
+  ["options", "exclusionInput", "exclusionAddBtn", "siteExclusions", "exclusionList", "first.example", "latest.example"],
+  ["popup", "newItem", "addBtn", "allowlist", "list", "@first", "/@latest"],
+]) {
+  test(`${surface} list completion cannot overwrite a newer ${key} storage update`, async () => {
+    const stored = {};
+    const ui = await createHarness(surface, stored);
+    ui.deferWrites();
+    ui.elements.get(inputId).value = added;
+    const save = ui.click(actionId);
+    await flushMicrotasks();
+    assert.equal(ui.pendingWrites.length, 1, "the original write must still be pending");
+    ui.externalChange(key, [latest]);
+    await flushMicrotasks();
+    assert.equal(ui.elements.get(listId).children.at(-1).children[0].textContent, latest);
+    ui.pendingWrites[0]();
+    await save;
+    assert.deepEqual(stored[key], [latest]);
+    assert.equal(ui.elements.get(listId).children.at(-1).children[0].textContent, latest);
+    assert.equal(ui.elements.get(inputId).value, "");
+  });
+}
+
+for (const [surface, key, listId] of [
+  ["options", "siteLibrary", "siteLibraryList"],
+  ["options", "siteExclusions", "exclusionList"],
+  ["popup", "allowlist", "list"],
+]) {
+  test(`${surface} removal completion preserves the latest ${key} and input draft`, async () => {
+    const old = key === "allowlist" ? "/@first" : "first.example";
+    const latest = key === "allowlist" ? "/@latest" : "latest.example";
+    const ui = await createHarness(surface, { [key]: [old] });
+    const inputId = surface === "popup" ? "newItem" : key === "siteLibrary" ? "siteInput" : "exclusionInput";
+    const input = ui.elements.get(inputId);
+    input.value = "unsubmitted-draft";
+    const button = ui.elements.get(listId).children[0].children[1];
+    ui.deferWrites();
+    const remove = button.listeners.get("click")[0]({ currentTarget: button, target: button });
+    await flushMicrotasks();
+    assert.equal(ui.pendingWrites.length, 1);
+    ui.externalChange(key, [latest]);
+    await flushMicrotasks();
+    ui.pendingWrites[0]();
+    await remove;
+    const items = ui.elements.get(listId).children;
+    assert.equal(items.length, 1);
+    assert.equal(items[0].children[0].textContent, latest);
+    assert.equal(input.value, "unsubmitted-draft");
+    assert.equal(ui.writes.length, 1);
+  });
+}

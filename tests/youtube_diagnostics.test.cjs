@@ -103,6 +103,28 @@ test("YouTube playback remains passive with diagnostic logging off", async () =>
   assert.equal(h.consoleEntries.length, 0);
 });
 
+test("turning Debug off stops media snapshots on previously traced videos", () => {
+  const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=one", debug: true });
+  playerFor(h);
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("yt-navigate-start"));
+  assert.match(copiedConsoleText(h.consoleEntries), /Tracing main video events/);
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-config", { detail: { debug: false } }));
+  let sourceReads = 0;
+  const source = h.video.currentSrc;
+  Object.defineProperty(h.video, "currentSrc", { get() { sourceReads++; return source; } });
+  const count = h.consoleEntries.length;
+  for (const type of ["waiting", "seeking", "seeked", "durationchange", "stalled"]) h.video.dispatchEvent({ type });
+  assert.equal(sourceReads, 0);
+  assert.equal(h.consoleEntries.length, count);
+  assert.equal(h.video.playCalls, 0);
+  assert.equal(h.video.pauseCalls, 0);
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-config", { detail: { debug: true } }));
+  const before = sourceReads;
+  h.video.dispatchEvent({ type: "waiting" });
+  assert.ok(sourceReads > before);
+  assert.match(copiedConsoleText(h.consoleEntries), /VIDEO: waiting/);
+});
+
 test("manual source-reset observation starts before native Play and cancels on Debug or route change", async () => {
   for (const cancel of ["debug-off", "route-return"]) {
     const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=one", debug: true });

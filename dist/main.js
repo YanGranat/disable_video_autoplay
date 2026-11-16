@@ -2119,6 +2119,7 @@ const YTAPYouTubeChannel = (() => {
       video.addEventListener(
         evt,
         () => {
+          if (!debug) return;
           const source = mediaSourceDebugSnapshot(video);
           log(
             "VIDEO:",
