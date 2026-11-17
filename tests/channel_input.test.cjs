@@ -39,3 +39,18 @@ test("unavailable or unrelated channel metadata does not create an exception", a
   invalid.invalid();
   await assert.rejects(invalid.adapter.resolve("youtube.com/c/example"), /channel-unavailable/);
 });
+
+test("a consent redirect is not accepted as a channel and does not require cookies", async () => {
+  const requests = [];
+  const context = vm.createContext({ URL, AbortSignal,
+    fetch: async (_url, options) => { requests.push(options); return {
+      ok: true, url: "https://consent.example/", text: async () => "<title>Consent</title>",
+    }; },
+  });
+  runScripts(context, ["core/site-context.js", "core/settings.js", "adapters/channel-input.js"]);
+  const adapter = vm.runInContext("YTAPChannelInput", context);
+  await assert.rejects(adapter.resolve("youtube.com/c/example"), /channel-unavailable/);
+  assert.equal(requests[0].credentials, "omit");
+  assert.equal(await adapter.resolve("@example"), "/@example");
+  assert.equal(requests.length, 1, "direct handles must remain usable without a network lookup");
+});

@@ -10,6 +10,59 @@ const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
 const lockManagers = new WeakMap();
 const storageListeners = new WeakMap();
 
+function fullCollection(key) {
+  const entries = [];
+  for (let i = 0; ; i++) {
+    const next = key === "allowlist" ? `/@${"a".repeat(25)}${String(i).padStart(4, "0")}`
+      : `site${i}.${"a".repeat(50)}.example`;
+    if (key.length + new TextEncoder().encode(JSON.stringify([...entries, next])).length > 8192) return { entries, next };
+    entries.push(next);
+  }
+}
+
+for (const [surface, key, inputId, addId, statusId] of [
+  ["popup", "allowlist", "newItem", "addBtn", "channelInputError"],
+  ["options", "siteLibrary", "siteInput", "siteAddBtn", "siteLibraryStatus"],
+  ["options", "siteExclusions", "exclusionInput", "exclusionAddBtn", "exclusionStatus"],
+]) {
+  test(`${surface} ${key} rejects an oversized list beside the retained input`, async () => {
+    const { entries, next } = fullCollection(key);
+    const ui = await createHarness(surface, { [key]: entries });
+    const input = ui.elements.get(inputId);
+    input.value = next;
+    await ui.click(addId);
+    assert.equal(ui.writes.length, 0);
+    assert.equal(input.value, next);
+    assert.equal(input.getAttribute("aria-invalid"), "true");
+    assert.match(ui.elements.get(statusId).textContent, /storage limit/);
+  });
+}
+
+for (const [surface, key, listId, inputId] of [
+  ["popup", "allowlist", "list", "newItem"],
+  ["options", "siteLibrary", "siteLibraryList", "siteInput"],
+  ["options", "siteExclusions", "exclusionList", "exclusionInput"],
+]) {
+  test(`${surface} ${key} preserves keyboard focus across repaint and removal`, async () => {
+    const values = key === "allowlist" ? ["/@alpha", "/@beta"] : ["alpha.example", "beta.example"];
+    const ui = await createHarness(surface, { [key]: values });
+    const list = ui.elements.get(listId);
+    list.children[0].children[1].focus();
+    ui.externalChange("debug", true);
+    await flushMicrotasks();
+    assert.equal(ui.document.activeElement, list.children[0].children[1]);
+    for (let remaining = 1; remaining >= 0; remaining--) {
+      const button = list.children[0].children[1];
+      await button.listeners.get("click")[0]({ currentTarget: button, target: button });
+      assert.equal(ui.document.activeElement, remaining ? list.children[0].children[1] : ui.elements.get(inputId));
+    }
+    ui.elements.get(inputId).focus();
+    ui.externalChange(key, values);
+    await flushMicrotasks();
+    assert.equal(ui.document.activeElement, ui.elements.get(inputId), "external updates must not steal input focus");
+  });
+}
+
 class FakeElement {
   constructor(id = "") {
     this.id = id;
@@ -37,7 +90,9 @@ class FakeElement {
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   querySelectorAll() { return []; }
   appendChild(child) { this.children.push(child); }
-  focus() {}
+  contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
+  get lastElementChild() { return this.children.at(-1); }
+  focus() { this.ownerDocument.activeElement = this; }
 }
 
 async function createHarness(basename, stored = {}, browserLanguage = "en") {
@@ -51,14 +106,17 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
     } });
   }
   const elements = new Map();
-  for (const match of read(`${basename}.html`).matchAll(/\bid="([^"]+)"/g)) {
-    elements.set(match[1], new FakeElement(match[1]));
+  for (const match of read(`${basename}.html`).matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)) {
+    const element = new FakeElement(match[1]);
+    for (const attribute of match[0].matchAll(/\b([a-z][a-z0-9-]*)="([^"]*)"/g)) element.setAttribute(attribute[1], attribute[2]);
+    elements.set(match[1], element);
   }
   const writes = [];
   const consoleEntries = [];
   const pendingReads = [];
   const pendingTabQueries = [];
   const pendingWrites = [];
+  const channelRequests = [];
   let deferReads = false;
   let deferTabQueries = false;
   let failWrites = false;
@@ -66,10 +124,14 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
   const document = {
     documentElement: {},
     getElementById: (id) => elements.get(id),
-    querySelectorAll: () => [],
-    createElement: () => new FakeElement(),
+    querySelectorAll(selector) {
+      const attribute = selector.match(/^\[([a-z0-9-]+)\]$/)?.[1];
+      return attribute ? [...elements.values()].filter(element => element.getAttribute(attribute) !== null) : [];
+    },
+    createElement: () => Object.assign(new FakeElement(), { ownerDocument: document }),
     addEventListener() {},
   };
+  for (const element of elements.values()) element.ownerDocument = document;
   const chrome = {
     i18n: { getUILanguage: () => browserLanguage },
     storage: {
@@ -103,7 +165,8 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
     runtime: { openOptionsPage() {} },
   };
   const context = vm.createContext({
-    document, chrome, URL, navigator: { locks: lockManagers.get(stored) }, HTMLElement: FakeElement, Node: FakeElement,
+    document, chrome, URL, AbortSignal, TextEncoder, navigator: { locks: lockManagers.get(stored) }, HTMLElement: FakeElement, Node: FakeElement,
+    fetch: async (url) => { channelRequests.push(url); return { ok: false }; },
     setTimeout, clearTimeout,
     console: Object.fromEntries(["log", "info", "debug"].map((name) => [name, (...args) => consoleEntries.push(args)])),
   });
@@ -111,7 +174,7 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
   await new Promise((resolve) => setImmediate(resolve));
 
   return {
-    document, elements, writes, pendingReads, pendingTabQueries, pendingWrites, consoleEntries,
+    document, elements, writes, pendingReads, pendingTabQueries, pendingWrites, consoleEntries, channelRequests,
     deferReads() { deferReads = true; },
     deferTabQueries() { deferTabQueries = true; },
     failWrites(value = true) { failWrites = value; },
@@ -154,7 +217,51 @@ for (const surface of ["popup", "options"]) {
     }
     assert.equal(harness.writes.length, 0);
   });
+
+  test(`${surface} visible settings errors follow external language changes`, async () => {
+    const harness = await createHarness(surface, { uiLanguage: "en" });
+    harness.failWrites();
+    await harness.change("applyToShorts", true);
+    const error = harness.elements.get("settingsError");
+    assert.equal(error.hidden, false);
+    harness.failWrites(false);
+    const context = vm.createContext({});
+    runScripts(context, [`ui/${surface}-strings.js`]);
+    const dictionaries = vm.runInContext("YTAPStrings", context);
+    for (const language of ["de", "es", "ru", "uk", "en"]) {
+      harness.externalChange("uiLanguage", language);
+      await flushMicrotasks();
+      assert.equal(error.hidden, false, "changing language must not dismiss an unresolved error");
+      assert.equal(error.textContent, dictionaries[language].settingsError);
+    }
+  });
 }
+
+test("channel errors preserve their meaning across settings and language changes", async () => {
+  const harness = await createHarness("popup", { uiLanguage: "en" });
+  harness.elements.get("newItem").value = "/c/example";
+  await harness.click("addBtn");
+  assert.equal(harness.channelRequests.length, 1);
+  const error = harness.elements.get("channelInputError");
+  const context = vm.createContext({});
+  runScripts(context, ["ui/popup-strings.js"]);
+  const dictionaries = vm.runInContext("YTAPStrings", context);
+  assert.equal(error.textContent, dictionaries.en.channelResolveFailed);
+  for (const language of ["de", "es", "ru", "uk", "en"]) {
+    harness.externalChange("uiLanguage", language);
+    await flushMicrotasks();
+    assert.equal(error.hidden, false);
+    assert.equal(error.textContent, dictionaries[language].channelResolveFailed);
+  }
+  harness.externalChange("debug", true);
+  await flushMicrotasks();
+  assert.equal(error.textContent, dictionaries.en.channelResolveFailed);
+  harness.elements.get("newItem").value = "not a channel";
+  await harness.click("addBtn");
+  harness.externalChange("uiLanguage", "de");
+  await flushMicrotasks();
+  assert.equal(error.textContent, dictionaries.de.channelInputInvalid);
+});
 
 test("status messages keep independent timers and replace or clear old messages", () => {
   const elements = new Map([["first", new FakeElement()], ["second", new FakeElement()]]);

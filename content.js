@@ -1,5 +1,6 @@
-/* global YTAPSettings, YTAPSettingsStore, YTAPDiagnostics, YTAPPlaybackPolicy, YTAPPageContext */
-const { contentDefaults: DEFAULTS, normalizeChannel, normalizeSite, siteMatchesHostname } = YTAPSettings;
+/* global YTAPSettings, YTAPSiteRules, YTAPSettingsStore, YTAPDiagnostics, YTAPPlaybackPolicy, YTAPPageContext */
+const { contentDefaults: DEFAULTS, normalizeChannel } = YTAPSettings;
+const { normalizeSite, siteMatchesHostname } = YTAPSiteRules;
 const { sanitizeDebugString, sanitizeDebugArgs } = YTAPDiagnostics;
 
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
@@ -13,6 +14,7 @@ let lastUrl = location.href;
 let pendingYouTubeNavigation = { videoId: "", at: 0 };
 let manualPlaylistRouteKey = "";
 let contextInvalidated = false;
+let configDelivered = false;
 let urlPollTimer = null;
 
 const YOUTUBE_NAVIGATION_INTENT_MAX_AGE_MS = 5000;
@@ -54,7 +56,7 @@ function isCurrentSiteInLibrary() {
 }
 
 function shouldApplyToOtherSite() {
-  return YTAPSettings.otherSiteRule(settings, getSiteScopeHostname()).blocked;
+  return YTAPSiteRules.otherSiteRule(settings, getSiteScopeHostname()).blocked;
 }
 
 function consumeYouTubeNavigationIntent() {
@@ -110,6 +112,7 @@ function classifyManualPlaylistRoute(navKey, source, routeChanged) {
 }
 
 function sendConfig() {
+  configDelivered = true;
   window.dispatchEvent(
     new CustomEvent("ytap-config", {
       detail: {
@@ -145,6 +148,14 @@ async function loadSettings() {
       contextInvalidated = true;
       if (urlPollTimer !== null) clearInterval(urlPollTimer);
       urlPollTimer = null;
+      if (!configDelivered) {
+        // A detached instance cannot load its settings. Settle provisional
+        // requests without persisting a change to the user's protection.
+        window.dispatchEvent(new CustomEvent("ytap-config", {
+          detail: YTAPSettings.toMainConfig({ ...settings, enabled: false }, false),
+        }));
+        configDelivered = true;
+      }
     }
     return { ...settings };
   }
@@ -281,7 +292,7 @@ async function onNavigate(source) {
 
   const manualPlaylistRoute = classifyManualPlaylistRoute(navKey, source, previousNavKey !== navKey);
 
-  log(`=== onNavigate #${navId}`, {
+  if (settings.debug) log(`=== onNavigate #${navId}`, {
     source,
     url: location.href,
     isVideoPage: isVideoPage(),

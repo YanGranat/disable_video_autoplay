@@ -3,7 +3,7 @@ const { test } = require("node:test");
 const vm = require("node:vm");
 const fs = require("node:fs");
 
-function fixture({ emitFails = false } = {}) {
+function fixture({ emitFails = false, context: readContext = () => ({}) } = {}) {
   const calls = [];
   const lines = [];
   let clock = 100;
@@ -37,6 +37,7 @@ function fixture({ emitFails = false } = {}) {
   const diagnostic = api.create({
     mediaPrototype: Media.prototype, elementPrototype: Element.prototype,
     now: () => clock, snapshot: () => ["mediaId=m1", "sourceId=s1"],
+    context: readContext,
     emit: (...args) => { if (emitFails) throw failure; lines.push(args.join(" ")); },
     MutationObserver, setTimeout: fn => { timer = fn; return 1; }, clearTimeout: () => { timer = null; },
   });
@@ -113,7 +114,9 @@ test("lazy expiry, cancellation and replacement windows cannot revive old observ
     if (cancel === "replacement") f.diagnostic.begin(f.other);
     const count = f.lines.length;
     f.video.load();
-    assert.equal(f.lines.length, count, cancel);
+    const closesLazily = cancel === "expiry" || cancel === "disconnect";
+    assert.equal(f.lines.length, count + (closesLazily ? 1 : 0), cancel);
+    if (closesLazily) assert.match(f.lines.at(-1), /YouTube playback summary/);
     f.diagnostic.reset();
   }
 });
@@ -170,4 +173,85 @@ test("opaque caller summaries retain web and extension boundaries, not identifie
   assert.doesNotMatch(text, /self-private|other-private|private\.js|secret|player\.example|https?:|chrome-extension:/);
   assert.deepEqual(Object.getOwnPropertyDescriptor(Error, "prepareStackTrace"), originalStack);
   diagnostic.reset();
+});
+
+test("source-reset observations retain deeper initiators without expanding ordinary play traces", () => {
+  const f = fixture();
+  const stack = [
+    "Error",
+    " at operation (chrome-extension://self-private/main.js:10:2)",
+    " at sourceSetter (chrome-extension://self-private/main.js:20:3)",
+    ...Array.from({ length: 6 }, (_, i) => ` at privatePlayerMethod (https://player.example/private.js?token=secret:${30 + i}:4)`),
+    " at privateInitiator (chrome-extension://other-private/private.js:40:5)",
+    " at privateBridge (https://bridge.example/private.js:50:6)",
+    " at privateOverflow (https://overflow.example/private.js:60:7)",
+  ].join("\n");
+  const context = vm.createContext({ URL, Error: class { constructor() { this.stack = stack; } } });
+  vm.runInContext(fs.readFileSync("adapters/playback-diagnostics.js", "utf8"), context);
+  const diagnostic = vm.runInContext("YTAPPlaybackDiagnostics", context).create({
+    mediaPrototype: f.Media.prototype, now: () => 100, snapshot: () => [],
+    emit: (...args) => f.lines.push(args.join(" ")),
+    setTimeout: () => 1, clearTimeout() {},
+  });
+  diagnostic.begin(f.video);
+  try {
+    f.video.src = "https://media.example/private-source";
+    const sourceLine = f.lines.at(-1);
+    assert.match(sourceLine, /operation=src-set.*other-extension:j2:40:5/);
+    assert.equal(sourceLine.match(/caller=(\S+)/)[1].split(">").length, 8);
+    assert.equal(f.calls.length, 1);
+    diagnostic.recordPlay(f.video);
+    const playLine = f.lines.at(-1);
+    assert.equal(playLine.match(/caller=(\S+)/)[1].split(">").length, 3);
+    assert.doesNotMatch(playLine, /other-extension/);
+    assert.doesNotMatch(f.lines.join("\n"), /private|secret|\.example|https?:|chrome-extension:|:60:7/);
+  } finally { diagnostic.reset(); }
+});
+
+test("playback summaries distinguish source restarts, buffering and extension actions", () => {
+  const state = { mediaId: "m1", sourceId: "s1", pointerSeq: 7, clickSeq: 7, keySeq: 0, generation: 2, frame: "top", tracing: true };
+  const f = fixture({ context: () => ({ ...state }) });
+  f.diagnostic.begin(f.video, true);
+  f.diagnostic.recordEvent(f.video, "play", "s1");
+  f.diagnostic.recordEvent(f.video, "playing", "s1");
+  f.diagnostic.recordEvent(f.video, "waiting", "s1");
+  f.diagnostic.recordEvent(f.video, "playing", "s1");
+  assert.equal(f.lines.filter(line => line.includes("playback summary")).length, 0);
+  f.video.src = "private-next-source";
+  f.diagnostic.recordEvent(f.video, "emptied", "s1");
+  state.sourceId = "s2";
+  f.diagnostic.recordPlay(f.video, "authorized");
+  f.diagnostic.recordEvent(f.video, "play", "s2");
+  f.diagnostic.recordEvent(f.video, "playing", "s2");
+  const restart = f.lines.at(-1);
+  assert.match(restart, /playback summary.*reason=media-restarted.*starts=2/);
+  assert.match(restart, /sourceStart=s1.*sourceEnd=s2.*sourceResets=1.*sourceChanges=1/);
+  assert.match(restart, /playRequests=2.*blockedRequests=0.*extensionActions=0.*actionKinds=none/);
+  assert.match(restart, /pointerStart=7.*pointerEnd=7.*clickStart=7.*clickEnd=7.*routeChanged=false.*waiting=1/);
+  state.pointerSeq++;
+  state.clickSeq++;
+  f.diagnostic.recordAction(f.video, "visibility");
+  f.diagnostic.recordEvent(f.video, "pause", "s2");
+  f.expire();
+  assert.match(f.lines.at(-1), /reason=expired.*extensionActions=1.*actionKinds=visibility.*pointerEnd=8/);
+  assert.equal(f.lines.filter(line => line.includes("playback summary")).length, 2);
+  assert.equal(f.calls.length, 1, "observation must not create playback or source operations");
+  assert.doesNotMatch(f.lines.join("\n"), /private-next-source/);
+});
+
+test("closed-session summaries are complete after caps and cannot revive after debug-off", () => {
+  const f = fixture();
+  f.diagnostic.begin(f.video);
+  for (let i = 0; i < 30; i++) f.diagnostic.recordPlay(f.video, "block");
+  for (const kind of ["intervention", "source", "play"]) f.diagnostic.recordAction(f.video, kind);
+  f.diagnostic.reset("route");
+  assert.match(f.lines.at(-1), /playRequests=30.*blockedRequests=30.*extensionActions=3.*actionKinds=intervention,source,play/);
+  assert.match(f.lines.at(-1), /routeChanged=true/);
+  const count = f.lines.length;
+  f.diagnostic.recordEvent(f.video, "playing", "s2");
+  assert.equal(f.lines.length, count);
+  f.diagnostic.begin(f.video);
+  const before = f.lines.length;
+  f.diagnostic.reset("debug-off");
+  assert.equal(f.lines.length, before);
 });

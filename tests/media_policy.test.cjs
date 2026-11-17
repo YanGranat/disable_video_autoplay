@@ -17,6 +17,15 @@ function classify(metadata, { role = null, replacement = noReplacement, ...rest 
   return policy.classify(Object.freeze(metadata), history, now, 5000);
 }
 
+test("live-stream evidence bypasses video blocking without leaving an audio permission", () => {
+  const result = classify({ ...visual, liveStream: true }, { role: { source: "metadata" } });
+  assert.equal(result.kind, "live-stream");
+  assert.equal(result.forgetRole, true);
+  assert.equal(result.rememberRole, null);
+  assert.equal(result.recordVisual, false);
+  assert.equal(classify(visual).kind, "visual");
+});
+
 test("metadata is required to establish an audio role", () => {
   assert.equal(classify(unknown).kind, "unknown");
   const result = classify(audio);

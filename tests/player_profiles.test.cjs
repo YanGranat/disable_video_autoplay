@@ -39,6 +39,20 @@ test("generic playback labels distinguish media actions from unrelated calls to 
   }
 });
 
+test("generic player-specific Play controls do not require a visible text label", () => {
+  const { adapter } = createPlayer("other");
+  for (const name of ["plyr__control--overlaid", "jw-icon-playback", "vjs-big-play-button"]) {
+    const control = { ...button(""), className: name, matches: selector => selector === `.${name}` };
+    assert.equal(adapter.isOnPlayControl([control]), true, name);
+  }
+  const plyr = { ...button(""), getAttribute: key => key === "data-plyr" ? "play" : "" };
+  assert.equal(adapter.isOnPlayControl([plyr]), true);
+  for (const name of ["plyr__control", "jw-icon-settings", "vjs-poster", "cookie-close", "player-advert"] ) {
+    const control = { ...button(""), className: name, matches: selector => selector === `.${name}` };
+    assert.equal(adapter.isOnPlayControl([control]), false, name);
+  }
+});
+
 test("YouTube content evidence belongs to the media controller and leaves uncertainty unknown", () => {
   let expected = "two";
   const adapter = players.create({

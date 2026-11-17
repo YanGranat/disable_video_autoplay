@@ -10,8 +10,8 @@ test("every worker startup restores the persisted action icon without a lifecycl
     const event = { addListener() {} };
     const context = vm.createContext({
       importScripts() {},
-      YTAPSettingsStore: { read: async () => ({ enabled }), subscribe() {} },
-      chrome: { runtime: { onInstalled: event, onStartup: event }, storage: { onChanged: event },
+      YTAPSettings: { defaults: { enabled: true } },
+      chrome: { runtime: { onInstalled: event, onStartup: event }, storage: { sync: { get: async () => ({ enabled }) }, onChanged: event },
         action: { setIcon: async ({ path: icon }) => icons.push(icon) } },
     });
     vm.runInContext(fs.readFileSync(path.join(__dirname, "../background.js"), "utf8"), context);
@@ -29,9 +29,10 @@ test("a superseded icon read cannot overwrite a newer enabled state", async () =
   const event = { addListener() {} };
   const context = vm.createContext({
     importScripts() {},
-    YTAPSettingsStore: { read: () => new Promise((resolve) => reads.push(resolve)),
-      subscribe: (callback) => { changed = callback; } },
+    YTAPSettings: { defaults: { enabled: true } },
     chrome: { runtime: { onInstalled: event, onStartup: event },
+      storage: { sync: { get: () => new Promise((resolve) => reads.push(resolve)) },
+        onChanged: { addListener: (callback) => { changed = callback; } } },
       action: { setIcon: async ({ path: icon }) => icons.push(icon) } },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../background.js"), "utf8"), context);

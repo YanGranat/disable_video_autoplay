@@ -14,6 +14,35 @@ The suite covers passive behavior on naturally paused sites, audio-only media bo
 
 Core tests run without a browser or DOM. They cover scope decisions, exact gesture-time boundaries, immutable defaults, config projection and redaction. Media-evidence tests use an injected clock to verify route generations, one-time replacement claims and expiry. Player-profile tests cover control recognition, input ownership and blocked-playback results, including controls mounting or disappearing during startup. Media-policy tests distinguish confirmed audio from provisional replacements, check exact expiry boundaries and verify which evidence must be retained or cleared. Page-context tests keep the document referrer fixed while changing accessible parent locations, including nested related frames and inaccessible-owner fallback. Playback suites separate startup, YouTube, platform controls, media lifecycle and generic playback, with independent media prototypes for each harness. Integration tests load the actual generated content scripts named by the manifest and the scripts listed in popup/options HTML. Consistency checks fail if a bundle is stale or browser/storage dependencies leak into the core. In a real browser, verify both MAIN and ISOLATED startup; a patched `play()` alone does not prove that settings and navigation commands are reaching it.
 
+## Browser checks
+
+```powershell
+npx playwright install chromium
+npm run test:browser
+```
+
+The browser suite installs the extension in an isolated, temporary Chromium
+profile and serves synthetic media over loopback HTTP. It exercises both content
+worlds, native media promises, live streams and keyboard focus in settings.
+The test browser permits native autoplay so a paused result proves extension
+behavior rather than Chromium's default autoplay restriction.
+
+## Release package
+
+With Python 3.9 or newer, build the bundles and create a runtime-only ZIP:
+
+```powershell
+npm run build
+npm run package -- --output temporary_files/extension.zip
+npm run test:package
+```
+
+The packager follows manifest and local runtime dependencies, normalizes text
+line endings and archive metadata, and rejects missing, external or overwritten
+files. An existing output must be removed or a new filename selected explicitly.
+Set `YTAP_EXTENSION_ROOT` to an extracted package to run the browser suite against
+that exact artifact instead of the checkout.
+
 ## Before manual testing
 
 1. Open `chrome://extensions`.
@@ -86,11 +115,11 @@ Core tests run without a browser or DOM. They cover scope decisions, exact gestu
 1. Block a video with a direct `src`, then press Play: restore that source and start playback.
 2. Reuse the same element on a new route, assign another `src`, and issue repeated autoplay requests. Manual Play must restore the new source, even if `currentSrc` still names the old one after `load()`.
 3. Turn off Stop mode or the master switch after a source reset. The next Play must not remain stuck without a source.
-4. If the site assigns a replacement `src`, `srcObject`, or `<source>` children, leave that source under site control. Stream and child-source players must use pause-only blocking.
+4. If the site assigns a replacement `src`, `srcObject`, or `<source>` children, leave that source under site control. MediaStream playback stays outside blocking. MediaSource-backed and child-source video players use pause-only blocking.
 
 ## UI and diagnostics
 
-1. Check popup and options in English and Russian.
+1. Check popup and options in every supported UI language.
 2. Toggle **Pause playlist auto-next** in the popup, open the options page, and verify that the same state appears there. Repeat in the opposite direction.
 
    - Keep both windows open, change different switches in each, then reopen them: both changes must remain saved.

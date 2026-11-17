@@ -297,6 +297,7 @@ const YTAPPlayerDom = Object.freeze({
         node.getAttribute?.("aria-label"),
         node.getAttribute?.("title"),
         node.getAttribute?.("data-action"),
+        node.getAttribute?.("data-plyr"),
         node.getAttribute?.("data-testid"),
         node.getAttribute?.("data-test"),
         node.id,
@@ -319,6 +320,7 @@ const YTAPPlayerDom = Object.freeze({
         const closeToTargetOrInteractive = index <= 2 || node.tagName === "BUTTON" || role === "button";
         if (!closeToTargetOrInteractive) continue;
         if (/(^|[\s_-])(badge|store|download)([\s_-]|$)/i.test(text)) continue;
+        if (nodeMatches(node, [".plyr__control--overlaid", ".jw-icon-playback"])) return true;
         const looksLikePlay = /(^|[\s_-])(playpause|playpausetoggle|toggleplay|togglepause|play|pause|resume|replay)([\s_-]|$)/i.test(text)
           || /(^|[\s_-])(?:start|watch)[\s_-]+(?:video|movie|stream|playback)([\s_-]|$)/i.test(text)
           || text.includes("воспроиз")

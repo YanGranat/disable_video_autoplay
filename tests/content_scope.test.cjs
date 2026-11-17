@@ -319,6 +319,19 @@ test("a failed settings refresh preserves the last complete coverage configurati
   }
 });
 
+test("invalidation before the first settings reply releases provisional startup holds once", async () => {
+  const h = createHarness({ settingsProvider: async () => { throw new Error("Extension context invalidated."); } });
+  await settle();
+  const configs = h.commands.filter(({ type }) => type === "ytap-config");
+  assert.equal(configs.length, 1);
+  assert.equal(configs[0].detail.settingsReady, true);
+  assert.equal(configs[0].detail.enabled, false);
+  assert.equal(h.isPolling(), false);
+  h.window.dispatchEvent(new FakeCustomEvent("popstate"));
+  await settle();
+  assert.equal(h.commands.filter(({ type }) => type === "ytap-config").length, 1);
+});
+
 test("an invalidated extension context retains coverage and stops navigation polling", async () => {
   let reads = 0;
   const h = createHarness({ hostname: "www.twitch.tv", pathname: "/first", search: "", settingsProvider: async () => {

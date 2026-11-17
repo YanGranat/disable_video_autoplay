@@ -1,5 +1,16 @@
 /* exported YTAPMediaSource */
 const YTAPMediaSource = Object.freeze({
+  isLiveStream(video) {
+    const source = video.srcObject;
+    if (!source || typeof MediaStream === "undefined") return false;
+    try {
+      // Use the native brand check, including streams from another frame.
+      MediaStream.prototype.getTracks.call(source);
+      return true;
+    } catch {
+      return false;
+    }
+  },
   create() {
     const resets = new WeakMap();
 

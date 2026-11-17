@@ -106,7 +106,7 @@
       background: rgba(233,69,96,0.05);
     }
     .select-btn:focus-visible {
-      outline: 2px solid rgba(233,69,96,0.35);
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
     .select-btn .value {
@@ -280,12 +280,12 @@
     .btn-link:focus-visible,
     .footer-link:focus-visible,
     .menu-item:focus-visible {
-      outline: 2px solid rgba(233,69,96,0.55);
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
 
     .switch input:focus-visible + .slider {
-      outline: 2px solid rgba(233,69,96,0.55);
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
 
@@ -443,6 +443,15 @@
     button:disabled, input:disabled { cursor: default; }
     .is-disabled label { cursor: default; }
     button:disabled, input:not([type="checkbox"]):disabled { opacity: .5; }
+    @media (forced-colors: active) {
+      .slider { forced-color-adjust: none; background: Canvas; border: 1px solid ButtonText; }
+      .slider::before { background: ButtonText; }
+      .switch input:checked + .slider { background: Highlight; }
+      .switch input:checked + .slider::before { background: HighlightText; }
+      .switch input:focus-visible + .slider, button:focus-visible, a:focus-visible, input:focus-visible {
+        outline-color: Highlight;
+      }
+    }
   </style>
 </head>
 <body>
@@ -456,7 +465,7 @@
       </div>
     </div>
 
-  <p id="settingsError" class="settings-error" role="alert" hidden></p>
+  <p id="settingsError" class="settings-error" role="alert" data-i18n="settingsError" hidden>Chrome could not read or save settings. Try again; if a list is full, remove an entry first.</p>
   <div class="section">
     <div class="section-title" data-i18n="generalTitle">General settings</div>
     <div class="toggle-row">
@@ -568,6 +577,7 @@
   <script src="vendor/domain-parser.js"></script>
   <script src="core/site-context.js"></script>
   <script src="core/settings.js"></script>
+  <script src="core/site-rules.js"></script>
   <script src="core/diagnostics.js"></script>
   <script src="adapters/settings-store.js"></script>
   <script src="adapters/channel-input.js"></script>

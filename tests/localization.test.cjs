@@ -58,7 +58,7 @@ for (const surface of ["popup", "options"]) {
   });
 }
 
-test("website counters select singular, plural and Ukrainian count forms", () => {
+test("website counters select singular, plural and Slavic count forms", () => {
   const context = uiContext();
   runScripts(context, ["ui/options-strings.js"]);
   const strings = vm.runInContext("YTAPStrings", context);
@@ -68,5 +68,8 @@ test("website counters select singular, plural and Ukrainian count forms", () =>
   assert.equal(strings.es.siteLibraryCount(2), "2 sitios");
   for (const [count, noun] of [[0, "сайтів"], [1, "сайт"], [2, "сайти"], [5, "сайтів"], [11, "сайтів"], [12, "сайтів"], [21, "сайт"], [22, "сайти"], [25, "сайтів"], [111, "сайтів"]]) {
     assert.equal(strings.uk.siteLibraryCount(count), `${count} ${noun}`);
+  }
+  for (const [count, noun] of [[0, "сайтов"], [1, "сайт"], [2, "сайта"], [5, "сайтов"], [11, "сайтов"], [12, "сайтов"], [21, "сайт"], [22, "сайта"], [25, "сайтов"], [111, "сайтов"], [114, "сайтов"], [121, "сайт"]]) {
+    assert.equal(strings.ru.siteLibraryCount(count), `${count} ${noun}`);
   }
 });

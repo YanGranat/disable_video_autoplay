@@ -1,6 +1,6 @@
-/* global $, YTAPSettings, YTAPSettingsStore, YTAPStrings, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability */
+/* global $, YTAPSettings, YTAPSiteRules, YTAPSettingsStore, YTAPStrings, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability, preserveListFocus */
 
-const { normalizeSite, normalizeSiteLibrary, siteMatchesHostname, isDedicatedSite } = YTAPSettings;
+const { normalizeSite, normalizeSiteLibrary, siteMatchesHostname, isDedicatedSite } = YTAPSiteRules;
 
 let currentLang = "en";
 let t = makeTranslator(YTAPStrings, currentLang);
@@ -14,10 +14,15 @@ const setExclusionStatus = createStatusSetter("exclusionStatus", 4000);
 const settingsView = createSettingsView(renderSettings, recoverSettingsError);
 const load = () => settingsView.load();
 
-async function recoverSettingsError() {
+async function recoverSettingsError(error) {
   try { await load(); } catch { /* Storage may be unavailable, not merely full. */ }
   $("settingsError").textContent = t("settingsError");
   $("settingsError").hidden = false;
+  if (error?.code === "SETTINGS_ITEM_TOO_LARGE") {
+    const excluded = error.settingKey === "siteExclusions";
+    (excluded ? setExclusionStatus : setSiteLibraryStatus)(t("listFull"));
+    $(excluded ? "exclusionInput" : "siteInput").setAttribute("aria-invalid", "true");
+  }
 }
 
 function renderSettings(data) {
@@ -56,6 +61,7 @@ function renderSettings(data) {
 function renderSiteLibrary(items, excluded = false) {
   const library = normalizeSiteLibrary(items);
   const list = $(excluded ? "exclusionList" : "siteLibraryList");
+  const restoreFocus = preserveListFocus(list, $(excluded ? "exclusionInput" : "siteInput"));
   list.innerHTML = "";
   $(excluded ? "exclusionCount" : "siteCount").textContent = t("siteLibraryCount", library.length);
 
@@ -64,12 +70,14 @@ function renderSiteLibrary(items, excluded = false) {
     empty.className = "site-empty";
     empty.textContent = t(excluded ? "exclusionEmpty" : "siteLibraryEmpty");
     list.appendChild(empty);
+    restoreFocus();
     return;
   }
 
   library.forEach((site) => {
     const item = document.createElement("li");
     item.className = "site-item";
+    item.setAttribute("data-key", site);
 
     const name = document.createElement("span");
     name.className = "site-item-name";
@@ -88,6 +96,7 @@ function renderSiteLibrary(items, excluded = false) {
     item.appendChild(remove);
     list.appendChild(item);
   });
+  restoreFocus();
 }
 
 async function addSite(excluded = false) {
@@ -113,7 +122,7 @@ async function addSite(excluded = false) {
     return normalizeSiteLibrary([...library, site]);
   });
   if (next === null) {
-    status(t("siteLibraryDuplicate"));
+    status(t("siteRuleDuplicate"));
     input.select();
     return;
   }

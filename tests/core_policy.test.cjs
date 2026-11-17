@@ -5,8 +5,8 @@ const { runScripts } = require("./load_scripts.cjs");
 
 // No fake document, Chrome API, clock, media element or event system is needed.
 const context = vm.createContext({ URL });
-runScripts(context, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/playback-policy.js", "core/diagnostics.js"]);
-const settings = vm.runInContext("YTAPSettings", context);
+runScripts(context, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/site-rules.js", "core/playback-policy.js", "core/diagnostics.js"]);
+const settings = vm.runInContext("({ ...YTAPSettings, ...YTAPSiteRules })", context);
 const policy = vm.runInContext("YTAPPlaybackPolicy", context);
 const diagnostics = vm.runInContext("YTAPDiagnostics", context);
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -171,6 +171,7 @@ test("storage adapter is lazy, preserves rejection and unregisters subscriptions
   let writes = 0;
   const listeners = new Set();
   const storageContext = vm.createContext({
+    TextEncoder,
     chrome: { storage: {
       sync: {
         get: async (defaults) => { reads++; return defaults; },
@@ -180,7 +181,7 @@ test("storage adapter is lazy, preserves rejection and unregisters subscriptions
     } },
     navigator: { locks: { request: (_key, action) => action() } },
   });
-  runScripts(storageContext, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "adapters/settings-store.js"]);
+  runScripts(storageContext, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/site-rules.js", "adapters/settings-store.js"]);
   const store = vm.runInContext("YTAPSettingsStore", storageContext);
   assert.equal(reads + writes + listeners.size, 0);
   assert.equal((await store.read()).enabled, true);

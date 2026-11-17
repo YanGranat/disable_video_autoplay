@@ -29,6 +29,15 @@
     mediaPrototype: HTMLMediaElement.prototype,
     elementPrototype: typeof Element === "function" ? Element.prototype : null,
     now: nowMs, emit: log, MutationObserver, setTimeout, clearTimeout,
+    context: video => ({
+      mediaId: mediaDebugId(video), sourceId: mediaSourceDebugSnapshot(video).sourceId,
+      pointerSeq: gesture.pointerSeq, clickSeq: gesture.debugClickSeq, keySeq: gesture.debugKeySeq,
+      generation: mediaRouteScope.generation,
+      navigation: youtubeNavigationPhase,
+      priorBlock: autoplayInterventionRoutes.get(video)?.generation === mediaRouteScope.generation
+        && autoplayInterventionRoutes.get(video)?.routeKey === mediaRouteScope.routeKey,
+      frame: window.top === window ? "top" : "child", tracing: tracedVideos.has(video),
+    }),
     snapshot: video => [
       `mediaId=${mediaDebugId(video)}`, `sourceId=${mediaSourceDebugSnapshot(video).sourceId}`,
       `paused=${video.paused}`, `readyState=${video.readyState}`,
@@ -119,6 +128,8 @@
     lastVideo: null,
     routeKey: "",
     pointerSeq: 0,
+    debugClickSeq: 0,
+    debugKeySeq: 0,
     pendingVideoIntentAt: 0,
     pendingVideoIntentRouteKey: "",
   };
@@ -140,6 +151,7 @@
   const startupPlayRequests = [];
   const mediaEvidence = YTAPMediaEvidence.create({ now: nowMs, replacementMs: MS_AUDIO_TRANSPORT_REPLACEMENT });
   let mediaRouteScope = { routeKey: "", generation: 0 };
+  let youtubeNavigationPhase = "unknown";
   let pendingYouTubeNavigation = { videoId: "", at: 0 };
   let pendingYouTubePlay = null;
   let manualYouTubePlaylistRouteKey = "";
@@ -197,7 +209,10 @@
     isMainVideo,
     isUserAllowedVideo,
     play: (video) => originalPlay.call(video),
-    onAction: (action, video) => log(`visibilitychange: ${action}`, `mediaId=${mediaDebugId(video)}`),
+    onAction: (action, video) => {
+      playbackDiagnostics.recordAction(video, "visibility");
+      log(`visibilitychange: ${action}`, `mediaId=${mediaDebugId(video)}`);
+    },
   });
   const {
     isYouTubeHost, isTwitchHost, isKickHost,
@@ -288,7 +303,7 @@
     visibilityPlayback.cancel();
     pendingYouTubePlay = null;
     youtubePlayDebugWindows = new WeakMap();
-    playbackDiagnostics.reset();
+    playbackDiagnostics.reset("route");
     const previousRouteKey = mediaRouteScope.routeKey;
     mediaRouteScope = {
       routeKey,
@@ -397,6 +412,7 @@
   function noteAutoplayIntervention(video, reason) {
     if (!video) return;
     const mediaScope = syncMediaRouteScope("autoplay-intervention");
+    playbackDiagnostics.recordAction(video, "intervention");
     const previous = autoplayInterventionRoutes.get(video);
     const sameIntervention = previous?.routeKey === mediaScope.routeKey
       && previous?.generation === mediaScope.generation;
@@ -552,6 +568,7 @@
       flow("pending video intent fallback → start playback", { routeKey });
       prepareUserPlayback(video);
       try {
+        playbackDiagnostics.recordAction(video, "play");
         const promise = originalPlay.call(video);
         promise?.catch?.((error) => log("pending video intent fallback play() rejected", error?.message || error));
       } catch (error) {
@@ -562,6 +579,7 @@
 
   function restoreStoppedSource(video) {
     if (mediaSources.restore(video)) {
+      playbackDiagnostics.recordAction(video, "source");
       log("stop-mode source restored", `mediaId=${mediaDebugId(video)}`, `sourceId=${mediaSourceDebugSnapshot(video).sourceId}`);
     }
   }
@@ -598,7 +616,8 @@
       const videoWidth = Number(el.videoWidth) || 0;
       const videoHeight = Number(el.videoHeight) || 0;
       const mediaId = mediaDebugId(el);
-      const decision = mediaEvidence.classify(el, { readyState, videoWidth, videoHeight }, isOtherSite());
+      const liveStream = YTAPMediaSource.isLiveStream(el);
+      const decision = mediaEvidence.classify(el, { readyState, videoWidth, videoHeight, liveStream }, isOtherSite());
       return {
         kind: decision.kind, evidence: decision.evidence, mediaId, readyState, videoWidth, videoHeight,
       };
@@ -607,8 +626,8 @@
     }
   }
 
-  function isKnownAudioTransportVideo(el) {
-    return classifyVideoMedia(el).kind === "audio-transport";
+  function isUnmanagedVideo(el) {
+    return ["audio-transport", "live-stream"].includes(classifyVideoMedia(el).kind);
   }
 
   function noteAudioTransportReset(video, source) {
@@ -632,7 +651,7 @@
   function isMainVideo(el) {
     try {
       if (!(el instanceof HTMLVideoElement)) return false;
-      if (isKnownAudioTransportVideo(el)) return false;
+      if (isUnmanagedVideo(el)) return false;
       if (!isYouTubeHost()) return true;
       if (cfg.ignoreMiniplayer) {
         // PiP uses the same <video> element; we should not fight it.
@@ -657,9 +676,9 @@
       document.querySelector("ytd-player video"),
       document.querySelector("video"),
     ];
-    const preferredVisualVideo = preferred.find((video) => video && !isKnownAudioTransportVideo(video));
+    const preferredVisualVideo = preferred.find((video) => video && !isUnmanagedVideo(video));
     if (preferredVisualVideo) return preferredVisualVideo;
-    return Array.from(document.querySelectorAll("video")).find((video) => !isKnownAudioTransportVideo(video)) || null;
+    return Array.from(document.querySelectorAll("video")).find((video) => !isUnmanagedVideo(video)) || null;
   }
 
   function shouldAllowUserPlay(video) {
@@ -797,6 +816,7 @@
         () => {
           if (!debug) return;
           const source = mediaSourceDebugSnapshot(video);
+          playbackDiagnostics.recordEvent(video, evt, source.sourceId);
           log(
             "VIDEO:",
             evt,
@@ -853,7 +873,7 @@
       flow("VIDEO playback guard", `source=${source}`, `mediaId=${media.mediaId}`,
         `mediaKind=${media.kind}`, `mediaEvidence=${media.evidence}`, `armed=${state.armed}`,
         `userAllowed=${userAllowed}`, `pausedCarryover=${pausedCarryover}`, `isMain=${isMainVideo(video)}`);
-      if (media.kind === "audio-transport") return;
+      if (["audio-transport", "live-stream"].includes(media.kind)) return;
       if (requireVisualMetadata && media.kind !== "visual") return;
       if (video.paused || (!state.armed && !pausedCarryover) || userAllowed) return;
       if (!pausedCarryover && !isMainVideo(video)) return;
@@ -915,7 +935,7 @@
   function neutralizeDeclarativeAutoplay(video) {
     if (!video || !(video instanceof HTMLVideoElement)) return;
     attachPlaybackGuard(video);
-    if (isKnownAudioTransportVideo(video)) return;
+    if (isUnmanagedVideo(video)) return;
     if (!state.armed || !isMainVideo(video) || isUserAllowedVideo(video)) return;
 
     try {
@@ -1004,7 +1024,7 @@
 
   function tracePlayRequest(video, seq, media, source, facts, decision) {
     if (!debug) return;
-    playbackDiagnostics.recordPlay(video);
+    playbackDiagnostics.recordPlay(video, decision);
     flow("play()", `seq=${seq}`, `decision=${decision}`, `mediaId=${media.mediaId}`,
       `sourceId=${source.sourceId}`, `armed=${facts.armed}`, `pausedOnce=${state.pausedOnce}`,
       `userAllowed=${facts.userAllowed}`, `pausedCarryover=${facts.carryover}`, `paused=${video.paused}`,
@@ -1016,7 +1036,10 @@
     markUserStarted(video, `${decision}#${seq}`);
     if (decision === "recent-area-click") gesture.lastInPlayerAreaAt = 0;
     prepareUserPlayback(video);
-    if (debug && isYouTubeHost()) playbackDiagnostics.begin(video);
+    if (debug && isYouTubeHost()) {
+      traceVideoEvents(video);
+      playbackDiagnostics.begin(video, true);
+    }
     const promise = originalPlay.apply(video, args);
     if (decision === "recent-area-click" && isTwitchHost()) scheduleTwitchUserStartRetry(video, seq, gesture.lastAnyAt);
     const reason = { "selected-controller": "selected-controller-play", "carryover-gesture": "carryover-controller-play", "user-gesture": "controller-play" }[decision];
@@ -1038,8 +1061,8 @@
     attachPlaybackGuard(this);
     const media = classifyVideoMedia(this);
     const source = mediaSourceDebugSnapshot(this);
-    if (media.kind === "audio-transport") {
-      log("play() → ALLOWED audio transport", `mediaId=${media.mediaId}`, `evidence=${media.evidence}`,
+    if (["audio-transport", "live-stream"].includes(media.kind)) {
+      log(media.kind === "audio-transport" ? "play() → ALLOWED audio transport" : "play() → ALLOWED live stream", `mediaId=${media.mediaId}`, `evidence=${media.evidence}`,
         `readyState=${media.readyState}`, `size=${media.videoWidth}x${media.videoHeight}`, `layout=${mediaLayoutSize(this)}`);
       return originalPlay.apply(this, args);
     }
@@ -1167,6 +1190,7 @@
     try {
       if (cfg.stopInsteadOfPause) {
         const result = mediaSources.stop(this);
+        playbackDiagnostics.recordAction(this, "source");
         if (result === "still-active") log(`#${seq} stop-mode: video still active after src removal, falling back to pause`);
         if (result === "pause-only") log(`#${seq} stop-mode: no src yet, falling back to pause-only`);
       } else {
@@ -1251,7 +1275,7 @@
   }
 
   function findInteractionVideo(e, path = []) {
-    const pathVideo = path.find((node) => node instanceof HTMLVideoElement && !isKnownAudioTransportVideo(node));
+    const pathVideo = path.find((node) => node instanceof HTMLVideoElement && !isUnmanagedVideo(node));
     if (pathVideo) return pathVideo;
     if (!isOtherSite()) return findMainVideo();
 
@@ -1262,7 +1286,7 @@
       if (!node || node.nodeType !== 1 || typeof node.querySelectorAll !== "function") continue;
       if (node.tagName === "BODY" || node.tagName === "HTML") break;
       const candidates = Array.from(node.querySelectorAll("video")).filter((video) => {
-        if (isKnownAudioTransportVideo(video)) return false;
+        if (isUnmanagedVideo(video)) return false;
         const rect = video.getBoundingClientRect?.();
         return !rect || (rect.width > 0 && rect.height > 0);
       });
@@ -1274,7 +1298,7 @@
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
       if (!isGenericPlayControlPath(path)) return null;
       const visible = Array.from(document.querySelectorAll("video")).filter((video) => {
-        if (isKnownAudioTransportVideo(video)) return false;
+        if (isUnmanagedVideo(video)) return false;
         const rect = video.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
       });
@@ -1284,7 +1308,7 @@
     let best = null;
     let bestArea = Infinity;
     document.querySelectorAll("video").forEach((video) => {
-      if (isKnownAudioTransportVideo(video)) return;
+      if (isUnmanagedVideo(video)) return;
       const rect = video.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
       if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return;
@@ -1404,6 +1428,7 @@
       flow("Twitch user start retry → native play", { seq, routeKey, reason, readyState: video.readyState });
       prepareUserPlayback(video);
       try {
+        playbackDiagnostics.recordAction(video, "play");
         const promise = originalPlay.call(video);
         promise?.catch?.((error) => log("Twitch user start retry rejected", error?.message || error));
       } catch (error) {
@@ -1486,6 +1511,7 @@
       markUserStarted(video, "controller-click-fallback");
       prepareUserPlayback(video);
       try {
+        playbackDiagnostics.recordAction(video, "play");
         const promise = originalPlay.call(video);
         promise?.catch?.((error) => log("controller fallback play() rejected", error?.message || error));
       } catch (error) {
@@ -1626,6 +1652,7 @@
     const facts = observeGesture(e, kind, path);
     const { intent, inPlayerArea, video } = facts;
     if (!intent.accepted) { traceGesture(e, kind, path, facts); return; }
+    if (debug && kind === "keydown") gesture.debugKeySeq++;
     let youtubeNavigationVideoId = "";
     pendingYouTubePlay = null;
     visibilityPlayback.cancel();
@@ -1680,6 +1707,7 @@
   // records permission; only controllerless fallback profiles may start media.
   window.addEventListener("click", (e) => {
     if (!e || e.isTrusted !== true) return;
+    if (debug) gesture.debugClickSeq++;
     syncDedicatedRoute("gesture:click");
     visibilityPlayback.cancel();
     const path = typeof e.composedPath === "function" ? e.composedPath() : [];
@@ -1761,6 +1789,7 @@
         continue;
       }
       restoreAutoplay(video);
+      playbackDiagnostics.recordAction(video, "play");
       originalPlay.apply(video, args).then(resolve, reject);
     }
 
@@ -1769,6 +1798,7 @@
       if (!(video instanceof HTMLVideoElement) || !video.isConnected) continue;
       restoreAutoplay(video);
       if (requestedVideos.has(video) || !video.paused) continue;
+      playbackDiagnostics.recordAction(video, "play");
       originalPlay.call(video).catch((e) => log("startup release play() rejected", e?.message || e));
     }
   }
@@ -1787,9 +1817,11 @@
     const wasCovered = shouldArmForUrl();
 
     if (typeof detail.debug === "boolean") debug = detail.debug;
+    if (debug) playbackDiagnostics.recordMilestone("config");
     if (!debug) {
+      youtubeNavigationPhase = "unknown";
       youtubePlayDebugWindows = new WeakMap();
-      playbackDiagnostics.reset();
+      playbackDiagnostics.reset("debug-off");
     }
     if (detail.settingsReady === true) cfg.settingsReady = true;
     flow("ytap-config", `ownerSource=${debug ? pageContext.getRuntimeLocation().ownerSource : "not-collected"}`, {
@@ -1807,7 +1839,7 @@
     }
     if (!cfg.enabled || !shouldArmForUrl()) {
       pendingYouTubePlay = null;
-      playbackDiagnostics.reset();
+      playbackDiagnostics.reset("scope-off");
     }
 
     // The URL poll normally delivers config after a Twitch/Kick SPA transition.
@@ -1875,6 +1907,7 @@
 
     info("ytap-resume: attempting play()", { paused: v.paused });
     if (v.paused) {
+      playbackDiagnostics.recordAction(v, "play");
       originalPlay.call(v).catch((e) => info("ytap-resume play() rejected", e?.message || e));
     }
   });
@@ -1884,11 +1917,17 @@
   // ---------------------------------------------------------------------------
 
   function onNavigateStart() {
+    if (debug) youtubeNavigationPhase = "started";
     resetForNavigation("yt-navigate-start");
     if (debug) traceVideoEvents(findMainVideo());
   }
 
   window.addEventListener("yt-navigate-start", onNavigateStart);
+  window.addEventListener("yt-navigate-finish", () => {
+    if (!debug) return;
+    youtubeNavigationPhase = "finished";
+    playbackDiagnostics.recordMilestone("navigation-finish");
+  });
   window.addEventListener("popstate", () => {
     if (isOtherSite()) resetMediaRouteScope(currentRouteKey(), "popstate");
   });

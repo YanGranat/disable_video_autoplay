@@ -1,6 +1,7 @@
-/* global $, YTAPSettings, YTAPSettingsStore, YTAPDiagnostics, YTAPStrings, YTAPChannelInput, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability */
+/* global $, YTAPSettings, YTAPSiteRules, YTAPSettingsStore, YTAPDiagnostics, YTAPStrings, YTAPChannelInput, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability, preserveListFocus */
 
-const { defaults: DEFAULTS, normalizeChannel, normalizeSite, normalizeSiteLibrary, isDedicatedSite } = YTAPSettings;
+const { defaults: DEFAULTS, normalizeChannel } = YTAPSettings;
+const { normalizeSite, normalizeSiteLibrary, isDedicatedSite } = YTAPSiteRules;
 const { sanitizeDebugArgs } = YTAPDiagnostics;
 
 let popupDebugEnabled = DEFAULTS.debug !== false;
@@ -24,10 +25,19 @@ const setSiteStatus = createStatusSetter("siteStatus", 3500);
 const settingsView = createSettingsView(renderSettings, recoverSettingsError);
 const load = () => settingsView.load();
 
-async function recoverSettingsError() {
+async function recoverSettingsError(error) {
   try { await load(); } catch { /* Storage may be unavailable, not merely full. */ }
   $("settingsError").textContent = t("settingsError");
   $("settingsError").hidden = false;
+  if (error?.code === "SETTINGS_ITEM_TOO_LARGE") {
+    if (error.settingKey === "allowlist") {
+      const message = $("channelInputError");
+      message.setAttribute("data-i18n", "listFull");
+      message.textContent = t("listFull");
+      message.hidden = false;
+      $("newItem").setAttribute("aria-invalid", "true");
+    } else setSiteStatus(t("listFull"));
+  }
 }
 
 async function renderSettings(data) {
@@ -106,7 +116,7 @@ async function renderCurrentSite(data) {
   titleEl.textContent = t("currentSiteTitle");
   card.hidden = false;
   detailsEl.hidden = false;
-  currentSiteRule = YTAPSettings.otherSiteRule(data, currentSite);
+  currentSiteRule = YTAPSiteRules.otherSiteRule(data, currentSite);
   if (data.enabled === false) {
     modeEl.textContent = t("currentSiteAllowed");
   } else if (currentSiteRule.source === "exclusion") {
@@ -127,17 +137,20 @@ async function renderCurrentSite(data) {
 
 function renderList(items) {
   const ul = $("list");
+  const restoreFocus = preserveListFocus(ul, $("newItem"));
   ul.innerHTML = "";
   const cleaned = items.map(normalizeChannel).filter(Boolean);
 
   if (cleaned.length === 0) {
     ul.innerHTML = `<li class="empty-state">${t("emptyState")}</li>`;
+    restoreFocus();
     return;
   }
 
   cleaned.forEach((item) => {
     const li = document.createElement("li");
     li.className = "channel-item";
+    li.setAttribute("data-key", item);
 
     const span = document.createElement("span");
     span.textContent = decodeURIComponent(item);
@@ -156,6 +169,7 @@ function renderList(items) {
     li.appendChild(btn);
     ul.appendChild(li);
   });
+  restoreFocus();
 }
 
 async function saveFlags(event) {
@@ -173,7 +187,7 @@ async function toggleCurrentSite() {
   btn.disabled = true;
   const site = currentSite;
   const blocked = !currentSiteRule.blocked;
-  await YTAPSettingsStore.updateSites((data) => YTAPSettings.setSiteBlocking(data, site, blocked));
+  await YTAPSettingsStore.updateSites((data) => YTAPSiteRules.setSiteBlocking(data, site, blocked));
   await load();
   setSiteStatus(t("siteRuleSaved"));
 }
@@ -183,6 +197,7 @@ async function addItem() {
   const value = normalizeChannel(input.value);
   input.setAttribute("aria-invalid", value ? "false" : "true");
   $("channelInputError").hidden = !!value;
+  $("channelInputError").setAttribute("data-i18n", "channelInputInvalid");
   $("channelInputError").textContent = value ? "" : t("channelInputInvalid");
   if (!value) {
     input.focus();
@@ -193,6 +208,7 @@ async function addItem() {
   try { resolved = await YTAPChannelInput.resolve(value); }
   catch {
     $("channelInputError").hidden = false;
+    $("channelInputError").setAttribute("data-i18n", "channelResolveFailed");
     $("channelInputError").textContent = t("channelResolveFailed");
     return;
   }

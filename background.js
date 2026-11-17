@@ -1,11 +1,11 @@
-/* global YTAPSettingsStore */
-importScripts("vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "adapters/settings-store.js");
+/* global YTAPSettings */
+importScripts("core/site-context.js", "core/settings.js");
 
 let visualRevision = 0;
 
 async function updateActionVisuals() {
   const revision = ++visualRevision;
-  const settings = await YTAPSettingsStore.read({ enabled: true });
+  const settings = await chrome.storage.sync.get({ enabled: YTAPSettings.defaults.enabled });
   if (revision !== visualRevision) return;
   const enabled = settings?.enabled !== false;
 
@@ -30,7 +30,7 @@ chrome.runtime.onStartup.addListener(() => {
   updateActionVisuals().catch(() => {});
 });
 
-YTAPSettingsStore.subscribe((changes, areaName) => {
+chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "sync") return;
   if (!changes.enabled) return;
   updateActionVisuals().catch(() => {});

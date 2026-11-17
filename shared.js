@@ -3,7 +3,7 @@
  * Settings values, persistence and diagnostic privacy have separate owners.
  */
 /* global YTAPSettingsStore, YTAPSettings */
-/* exported resolveUiLanguage, makeTranslator, applyI18n, createStatusSetter, initLanguageDropdown, createSettingsView, applySettingsAvailability */
+/* exported resolveUiLanguage, makeTranslator, applyI18n, createStatusSetter, initLanguageDropdown, createSettingsView, applySettingsAvailability, preserveListFocus */
 
 const $ = (id) => document.getElementById(id);
 
@@ -164,6 +164,7 @@ function initLanguageDropdown(reload, onError) {
       setDropdownOpen(false);
       btn.focus();
     }
+    if (e.key === "Tab") setDropdownOpen(false);
   });
 
   document.addEventListener("click", (e) => {
@@ -177,6 +178,21 @@ function initLanguageDropdown(reload, onError) {
   });
 }
 
+// Capture focus immediately before rebuilding a list, not before an async write.
+// A user who moved elsewhere while saving must keep their new focus.
+function preserveListFocus(list, input) {
+  const rows = Array.from(list.children);
+  const index = rows.findIndex((row) => row.contains(document.activeElement));
+  const key = rows[index]?.getAttribute("data-key");
+  return () => {
+    if (index < 0) return;
+    const nextRows = Array.from(list.children).filter((row) => row.getAttribute("data-key") !== null);
+    const row = nextRows.find((item) => item.getAttribute("data-key") === key)
+      || nextRows[Math.min(index, nextRows.length - 1)];
+    (row?.lastElementChild || input)?.focus();
+  };
+}
+
 // EventTarget does not handle rejected async listeners. Keep failed storage
 // operations visible without printing stored values or raw browser errors.
 function withUiErrorHandling(action, onError) {
@@ -185,8 +201,8 @@ function withUiErrorHandling(action, onError) {
     if (error) error.hidden = true;
     try {
       return await action(...args);
-    } catch {
-      await onError();
+    } catch (failure) {
+      await onError(failure);
     }
   };
 }

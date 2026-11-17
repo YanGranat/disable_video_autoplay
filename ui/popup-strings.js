@@ -46,6 +46,7 @@ const YTAPStrings = {
     statusSiteAdded: (v) => `Added to library: ${v}`,
     statusSiteRemoved: (v) => `Removed from library: ${v}`,
     settingsError: "Chrome could not read or save settings. Try again; if a list is full, remove an entry first.",
+    listFull: "This list has reached Chrome’s storage limit. Remove an entry before adding another.",
   },
   de: {
     title: "Disable video autoplay",
@@ -93,6 +94,7 @@ const YTAPStrings = {
     statusSiteAdded: (v) => `Zur Liste hinzugefügt: ${v}`,
     statusSiteRemoved: (v) => `Aus der Liste entfernt: ${v}`,
     settingsError: "Chrome konnte die Einstellungen nicht lesen oder speichern. Versuche es erneut. Entferne bei einer vollen Liste zuerst einen Eintrag.",
+    listFull: "Diese Liste hat das Speicherlimit von Chrome erreicht. Entferne einen Eintrag, bevor du einen weiteren hinzufügst.",
   },
   es: {
     title: "Disable video autoplay",
@@ -140,6 +142,7 @@ const YTAPStrings = {
     statusSiteAdded: (v) => `Añadido a la biblioteca: ${v}`,
     statusSiteRemoved: (v) => `Eliminado de la biblioteca: ${v}`,
     settingsError: "Chrome no pudo leer o guardar los ajustes. Inténtalo de nuevo; si una lista está llena, elimina primero una entrada.",
+    listFull: "Esta lista ha alcanzado el límite de almacenamiento de Chrome. Elimina una entrada antes de añadir otra.",
   },
   uk: {
     title: "Disable video autoplay",
@@ -176,7 +179,7 @@ const YTAPStrings = {
     currentSiteBlockedGlobally: "Автовідтворення блокується налаштуванням «Блокувати автовідтворення відео на всіх інших сайтах».",
     currentSiteBlockedFromLibrary: (site) => `Автовідтворення блокується правилом бібліотеки: ${site}.`,
     currentSiteAllowed: "На цьому сайті блокування автовідтворення вимкнено.",
-    currentSiteExcluded: (site) => `Блокування вимкнено за винятком: ${site}.`,
+    currentSiteExcluded: (site) => `Автовідтворення дозволено для ${site}.`,
     disableCurrentSite: "Вимкнути блокування на цьому сайті",
     enableCurrentSite: "Блокувати автовідтворення тут",
     removeSiteExclusion: (site) => `Видалити виняток для ${site}`,
@@ -187,6 +190,7 @@ const YTAPStrings = {
     statusSiteAdded: (v) => `Додано до бібліотеки: ${v}`,
     statusSiteRemoved: (v) => `Видалено з бібліотеки: ${v}`,
     settingsError: "Chrome не зміг прочитати або зберегти налаштування. Спробуй ще раз; якщо список заповнений, спочатку видали один запис.",
+    listFull: "Цей список досяг ліміту сховища Chrome. Видали запис, перш ніж додавати новий.",
   },
   ru: {
     title: "Disable video autoplay",
@@ -223,9 +227,9 @@ const YTAPStrings = {
     currentSiteBlockedGlobally: "Автовоспроизведение блокируется настройкой «Блокировать автовоспроизведение видео на всех остальных сайтах».",
     currentSiteBlockedFromLibrary: (site) => `Автовоспроизведение блокируется правилом библиотеки: ${site}.`,
     currentSiteAllowed: "На этом сайте блокировка выключена.",
-    currentSiteExcluded: (site) => `Блокировка выключена по исключению: ${site}.`,
+    currentSiteExcluded: (site) => `Автовоспроизведение разрешено для ${site}.`,
     disableCurrentSite: "Выключить блокировку на этом сайте",
-    enableCurrentSite: "Блокировать автоплей на этом сайте",
+    enableCurrentSite: "Блокировать автовоспроизведение на этом сайте",
     removeSiteExclusion: (site) => `Удалить исключение для ${site}`,
     siteRuleSaved: "Настройки сайта сохранены.",
     addCurrentSite: "Добавить сайт в библиотеку",
@@ -234,5 +238,6 @@ const YTAPStrings = {
     statusSiteAdded: (v) => `Добавлено в библиотеку: ${v}`,
     statusSiteRemoved: (v) => `Удалено из библиотеки: ${v}`,
     settingsError: "Chrome не смог прочитать или сохранить настройки. Попробуй ещё раз; если список заполнен, сначала удали одну запись.",
+    listFull: "Этот список достиг лимита хранилища Chrome. Удали запись, прежде чем добавлять новую.",
   },
 };

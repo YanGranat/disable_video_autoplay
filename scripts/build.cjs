@@ -2,10 +2,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.join(__dirname, "..");
-const shared = ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/diagnostics.js", "core/playback-policy.js", "adapters/page-context.js"];
+const shared = ["core/site-context.js", "core/settings.js", "core/diagnostics.js", "core/playback-policy.js", "adapters/page-context.js"];
 const bundles = Object.freeze({
   "dist/main.js": [...shared, "core/media-policy.js", "core/media-evidence.js", "adapters/media-source.js", "adapters/playback-diagnostics.js", "adapters/player-dom.js", "adapters/visibility-playback.js", "adapters/youtube-channel.js", "content_main.js"],
-  "dist/content.js": [...shared, "adapters/settings-store.js", "content.js"],
+  "dist/content.js": [...shared, "vendor/domain-parser.js", "core/site-rules.js", "adapters/settings-store.js", "content.js"],
 });
 
 function renderBundle(files) {
@@ -23,7 +23,8 @@ function build(check = false) {
   const license = fs.readFileSync(path.join(root, "node_modules/tldts/LICENSE"), "utf8").trim();
   const parser = fs.readFileSync(path.join(root, "node_modules/tldts/dist/index.cjs.min.js"), "utf8")
     .replace(/^\/\/# sourceMappingURL=.*$/gm, "").trim();
-  const vendor = `/* tldts 7.5.1 — MIT\n${license}\n*/\nconst YTAPDomainParser = (() => {\nconst exports = {};\n${parser}\nreturn Object.freeze(exports);\n})();\n`;
+  const parserVersion = JSON.parse(fs.readFileSync(path.join(root, "node_modules/tldts/package.json"), "utf8")).version;
+  const vendor = `/* tldts ${parserVersion} — MIT\n${license}\n*/\nconst YTAPDomainParser = (() => {\nconst exports = {};\n${parser}\nreturn Object.freeze(exports);\n})();\n`;
   const actualVendor = fs.existsSync(vendorPath) ? fs.readFileSync(vendorPath, "utf8").replace(/\r\n?/g, "\n") : null;
   if (actualVendor !== vendor.replace(/\r\n?/g, "\n")) {
     if (check) { console.error("vendor/domain-parser.js is stale; run npm run build"); current = false; }

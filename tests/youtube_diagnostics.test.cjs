@@ -185,3 +185,42 @@ test("late native settlements cannot be attributed to a cancelled diagnostic win
     assert.equal(h.video.playCalls, 1);
   }
 });
+
+test("copied playback summaries separate page resets from extension playback actions", async () => {
+  const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=one", debug: true });
+  playerFor(h);
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("yt-navigate-start"));
+  await assert.rejects(h.video.play(), { name: "NotAllowedError" });
+  assert.equal(h.video.playCalls, 0);
+  h.advanceTime(10);
+  h.windowTarget.dispatchEvent(trustedPlayerPointer(h.video));
+  await h.video.play();
+  h.video.dispatchEvent({ type: "play" });
+  h.video.dispatchEvent({ type: "playing" });
+  h.video.dispatchEvent({ type: "waiting" });
+  h.video.dispatchEvent({ type: "playing" });
+  assert.doesNotMatch(copiedConsoleText(h.consoleEntries), /playback summary.*media-restarted/);
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("yt-navigate-finish"));
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-config", { detail: { debug: true } }));
+  h.video.dispatchEvent({ type: "emptied" });
+  h.video.currentSrc = "blob:private-replacement-source";
+  await h.video.play();
+  h.video.dispatchEvent({ type: "play" });
+  h.video.dispatchEvent({ type: "playing" });
+  let text = copiedConsoleText(h.consoleEntries);
+  assert.match(text, /playback summary.*reason=media-restarted.*starts=2/);
+  assert.match(text, /sourceResets=1.*sourceChanges=1.*playRequests=2.*blockedRequests=0.*extensionActions=0/);
+  assert.match(text, /priorBlock=true.*pointerStart=1.*pointerEnd=1.*routeChanged=false.*tracingAvailable=true/);
+  assert.match(text, /navigationAtStart=started.*navigationFinishes=1.*navigationFinishMs=\d+.*configUpdates=1/);
+  assert.equal(h.video.playCalls, 2);
+  assert.equal(h.video.pauseCalls, 0);
+  h.video.pause();
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-resume"));
+  assert.equal(h.video.playCalls, 3);
+  h.location.search = "?v=two";
+  h.location.href = "https://www.youtube.com/watch?v=two";
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("yt-navigate-start"));
+  text = copiedConsoleText(h.consoleEntries);
+  assert.match(text, /playback summary.*reason=route.*extensionActions=1.*actionKinds=play.*routeChanged=true/);
+  assert.doesNotMatch(text, /private-replacement-source/);
+});

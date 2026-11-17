@@ -20,9 +20,12 @@ const YTAPMediaPolicy = (() => {
 
   // role is evidence for this exact element in the current route generation.
   // replacement describes the reset window, not permission to start any video.
-  function classify({ readyState, videoWidth, videoHeight }, {
+  function classify({ readyState, videoWidth, videoHeight, liveStream = false }, {
     generic, role, replacement, visualSeen,
   }, now, replacementMs) {
+    if (liveStream) return result("live-stream", "media-stream", {
+      forgetRole: true, clearReplacement: replacement.owned,
+    });
     const zeroDimensions = videoWidth === 0 && videoHeight === 0;
     if (readyState >= 1) {
       if (zeroDimensions) {

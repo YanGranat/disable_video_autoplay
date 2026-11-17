@@ -173,6 +173,8 @@ function createHarness({
   videoWidth = 1280,
   videoHeight = 720,
   autoplay = false,
+  srcObject = null,
+  MediaStream,
   debug = false,
 } = {}) {
   const { FakeMediaElement, FakeVideoElement } = createMediaTypes();
@@ -182,6 +184,7 @@ function createHarness({
   video.videoWidth = videoWidth;
   video.videoHeight = videoHeight;
   video.autoplay = autoplay;
+  video.srcObject = srcObject;
   video.classList = { contains: (name) => name === "html5-main-video" && hostname.includes("youtube") };
   const windowTarget = new FakeEventTarget();
   windowTarget.top = windowTarget;
@@ -237,6 +240,7 @@ function createHarness({
     performance: { now: () => performance.now() + clockOffset },
     HTMLMediaElement: FakeMediaElement,
     HTMLVideoElement: FakeVideoElement,
+    MediaStream,
     MutationObserver: FakeMutationObserver,
     CustomEvent: FakeCustomEvent,
     DOMException,
@@ -278,6 +282,7 @@ function createHarness({
 
   return {
     video,
+    context,
     createVideo: () => new FakeVideoElement(),
     createAudio: () => new FakeMediaElement(),
     windowTarget,

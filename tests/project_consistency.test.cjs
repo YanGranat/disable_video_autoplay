@@ -23,7 +23,7 @@ function decodeHtmlText(source) {
 }
 
 const modelContext = vm.createContext({ URL });
-runScripts(modelContext, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js"]);
+runScripts(modelContext, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/site-rules.js"]);
 const model = vm.runInContext("YTAPSettings", modelContext);
 for (const [input, expected] of [
   [" /@Example/videos/ ", "/@example"],
@@ -55,6 +55,8 @@ for (const world of ["MAIN", "ISOLATED"]) {
   assert.equal(files.includes("adapters/settings-store.js"), world === "ISOLATED");
   assert.equal(files.includes("adapters/player-dom.js"), world === "MAIN");
   assert.equal(files.includes("core/media-policy.js"), world === "MAIN");
+  assert.equal(files.includes("vendor/domain-parser.js"), world === "ISOLATED");
+  assert.equal(files.includes("core/site-rules.js"), world === "ISOLATED");
   for (const file of files) assert.ok(fs.existsSync(path.join(root, file)), `missing ${file}`);
   assert.ok(read(entry) === renderBundle(files), `${entry} is stale; run node scripts/build.cjs`);
 }
@@ -63,11 +65,13 @@ for (const basename of ["popup", "options"]) {
   const files = uiScripts(basename);
   const diagnostics = basename === "popup" ? ["core/diagnostics.js"] : [];
   const inputAdapters = basename === "popup" ? ["adapters/channel-input.js"] : [];
-  assert.deepEqual(files, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", ...diagnostics, "adapters/settings-store.js", ...inputAdapters, "shared.js", `ui/${basename}-strings.js`, `${basename}.js`]);
+  assert.deepEqual(files, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/site-rules.js", ...diagnostics, "adapters/settings-store.js", ...inputAdapters, "shared.js", `ui/${basename}-strings.js`, `${basename}.js`]);
 }
-for (const file of ["popup.js", "options.js", "shared.js", "content.js", "background.js"]) {
+for (const file of ["popup.js", "options.js", "shared.js", "content.js"]) {
   assert.equal(/chrome\.storage/.test(read(file)), false, `${file} must use the storage adapter`);
 }
+assert.doesNotMatch(read("background.js"), /domain-parser|site-rules|settings-store/,
+  "the icon worker must not load collection validation or the domain parser");
 for (const file of ["core/site-context.js", "core/settings.js", "core/diagnostics.js", "core/playback-policy.js", "core/media-policy.js"]) {
   assert.doesNotMatch(read(file), /\b(?:chrome|window|document|navigator|performance|Date)\s*\.|\b(?:setTimeout|setInterval|MutationObserver|HTMLMediaElement)\s*\(/, `${file} must not read browser state or perform effects`);
 }

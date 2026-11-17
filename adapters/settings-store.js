@@ -1,4 +1,4 @@
-/* global YTAPSettings */
+/* global YTAPSettings, YTAPSiteRules */
 /* exported YTAPSettingsStore */
 
 /**
@@ -7,6 +7,16 @@
  * All methods are lazy: loading this file performs no reads or registrations.
  */
 async function writeSettingsPatch(patch) {
+  const limit = chrome.storage.sync.QUOTA_BYTES_PER_ITEM ?? 8192;
+  for (const [key, value] of Object.entries(patch)) {
+    const bytes = key.length + new TextEncoder().encode(JSON.stringify(value)).length;
+    if (bytes > limit) {
+      const error = new Error("Settings item exceeds the sync storage limit");
+      error.code = "SETTINGS_ITEM_TOO_LARGE";
+      error.settingKey = key;
+      throw error;
+    }
+  }
   await chrome.storage.sync.set(patch);
   if ("allowlist" in patch) await chrome.storage.sync.remove?.("whitelist");
 }
@@ -18,7 +28,7 @@ const YTAPSettingsStore = Object.freeze({
     const channels = data.allowlist ?? data.whitelist;
     data.allowlist = Array.isArray(channels) ? [...new Set(channels.map(YTAPSettings.normalizeChannel).filter(Boolean))] : [];
     for (const key of ["siteLibrary", "siteExclusions"]) {
-      if (key in data) data[key] = YTAPSettings.normalizeSiteLibrary(data[key]);
+      if (key in data) data[key] = YTAPSiteRules.normalizeSiteLibrary(data[key]);
     }
     delete data.whitelist;
     return data;

@@ -2,6 +2,23 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { createHarness, requestPlayback, trustedPlayerPointer, trustedExternalControlEvent } = require("./helpers/playback.cjs");
 
+for (const key of [" ", "k"]) {
+  test(`generic shortcut ${JSON.stringify(key)} requires actual video focus`, async () => {
+    const h = createHarness({ hostname: "video.example" });
+    await requestPlayback(h.video);
+    h.advanceTime(20);
+    const keyboard = target => ({ type: "keydown", key, isTrusted: true, target,
+      composedPath: () => [target], preventDefault() {}, stopImmediatePropagation() {} });
+    h.windowTarget.dispatchEvent(keyboard(h.document.body));
+    await requestPlayback(h.video);
+    assert.equal(h.video.paused, true, "a page-level key must not grant playback permission");
+    h.document.activeElement = h.video;
+    h.windowTarget.dispatchEvent(keyboard(h.video));
+    await requestPlayback(h.video);
+    assert.equal(h.video.paused, false, "the focused video's shortcut must remain usable");
+  });
+}
+
 for (const control of ["settings", "progress", "mute", "fullscreen"]) {
   test(`classic YouTube ${control} input stays site-owned without authorizing playback`, async () => {
     const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=example" });
