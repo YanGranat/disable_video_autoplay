@@ -2,6 +2,8 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const vm = require("node:vm");
 const fs = require("node:fs");
+const path = require("node:path");
+const source = fs.readFileSync(path.join(__dirname, "../adapters/playback-diagnostics.js"), "utf8");
 
 function fixture({ emitFails = false, context: readContext = () => ({}) } = {}) {
   const calls = [];
@@ -30,7 +32,7 @@ function fixture({ emitFails = false, context: readContext = () => ({}) } = {}) 
     disconnect() { disconnected++; }
   }
   const context = vm.createContext({ URL });
-  vm.runInContext(fs.readFileSync("adapters/playback-diagnostics.js", "utf8"), context);
+  vm.runInContext(source, context);
   const api = vm.runInContext("YTAPPlaybackDiagnostics", context);
   const original = Object.getOwnPropertyDescriptors(Media.prototype);
   const originalAttributes = Object.getOwnPropertyDescriptors(Element.prototype);
@@ -154,7 +156,6 @@ test("opaque caller summaries retain web and extension boundaries, not identifie
   const f = fixture();
   const originalStack = Object.getOwnPropertyDescriptor(Error, "prepareStackTrace");
   // The module creates errors in its own VM; use an isolated synthetic Error there.
-  const source = fs.readFileSync("adapters/playback-diagnostics.js", "utf8");
   const context = vm.createContext({ URL, Error: class {
     constructor() {
       this.stack = "Error\n at operation (chrome-extension://self-private/adapters.js:10:2)\n at load (chrome-extension://self-private/adapters.js:20:3)\n at secretName (https://player.example/private.js?token=secret:30:4)\n at otherName (chrome-extension://other-private/private.js:40:5)\n at internal (chrome-extension://self-private/main.js:50:6)";
@@ -187,7 +188,7 @@ test("source-reset observations retain deeper initiators without expanding ordin
     " at privateOverflow (https://overflow.example/private.js:60:7)",
   ].join("\n");
   const context = vm.createContext({ URL, Error: class { constructor() { this.stack = stack; } } });
-  vm.runInContext(fs.readFileSync("adapters/playback-diagnostics.js", "utf8"), context);
+  vm.runInContext(source, context);
   const diagnostic = vm.runInContext("YTAPPlaybackDiagnostics", context).create({
     mediaPrototype: f.Media.prototype, now: () => 100, snapshot: () => [],
     emit: (...args) => f.lines.push(args.join(" ")),

@@ -1,9 +1,10 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
+const path = require("node:path");
 const { ESLint } = require("eslint");
 
 test("lint configuration checks browser and CommonJS code with the complexity limit", async () => {
-  const eslint = new ESLint();
+  const eslint = new ESLint({ cwd: path.resolve(__dirname, "..") });
   const browser = await eslint.lintText("window.probe = missingBinding;", { filePath: "content_main.js" });
   assert.ok(browser[0].messages.some(message => message.ruleId === "no-undef"));
   const common = await eslint.lintText("const unusedBinding = 1; module.exports = require('node:path');", { filePath: "scripts/probe.cjs" });
@@ -12,11 +13,15 @@ test("lint configuration checks browser and CommonJS code with the complexity li
   const branches = Array.from({ length: 25 }, (_, i) => `if (value === ${i}) return ${i};`).join("\n");
   const complex = await eslint.lintText(`window.probe = function (value) { ${branches} return -1; };`, { filePath: "content_main.js" });
   assert.ok(complex[0].messages.some(message => message.ruleId === "complexity"));
-  for (const file of ["dist/main.js", "vendor/domain-parser.js", "node_modules/probe.js", "temporary_files/probe.js", "store-preparation/probe.cjs"]) {
+  for (const file of ["dist/main.js", "vendor/domain-parser.js", "node_modules/probe.js", "workspace/probe.js", "temporary_files/probe.js", "store-preparation/probe.cjs"]) {
     assert.equal(await eslint.isPathIgnored(file), true, file);
   }
   const product = await eslint.lintText("const =;", { filePath: "adapters/probe.js" });
   assert.equal(product[0].fatalErrorCount, 1);
   const local = await eslint.lintText("const =;", { filePath: "store-preparation/probe.cjs" });
   assert.equal(local[0].fatalErrorCount, 0);
+  const workspace = await eslint.lintText("const =;", { filePath: "workspace/probe.js" });
+  assert.equal(workspace[0].fatalErrorCount, 0);
+  const nestedProduct = await eslint.lintText("const =;", { filePath: "adapters/workspace/probe.js" });
+  assert.equal(nestedProduct[0].fatalErrorCount, 1);
 });

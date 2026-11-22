@@ -1,4 +1,4 @@
-/* global chrome, document, MediaRecorder, getComputedStyle, matchMedia */
+/* global chrome, document, history, MediaRecorder, getComputedStyle, matchMedia */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -121,6 +121,38 @@ test("installed extension preserves media and settings contracts in Chromium", {
         await video.play().catch(() => {});
       });
       assert.equal(await page.locator("video").evaluate(video => video.paused), true);
+    });
+
+    await t.test("a retained related frame loses playback permission after parent SPA navigation", async () => {
+      await prepare();
+      const source = await page.locator("video").getAttribute("src");
+      const attached = page.waitForEvent("frameattached");
+      await page.evaluate(() => document.body.appendChild(document.createElement("iframe")));
+      const frame = await attached;
+      await frame.evaluate(src => {
+        document.body.innerHTML = '<video id="media" muted loop></video><button id="play">Play</button>';
+        const video = document.getElementById("media");
+        video.src = src;
+        document.getElementById("play").onclick = () => video.play().catch(() => {});
+      }, source);
+      await frame.waitForFunction(() => document.getElementById("media").readyState > 0);
+      const referrer = await frame.evaluate(() => document.referrer);
+      await frame.evaluate(() => document.getElementById("media").play().catch(() => {}));
+      assert.equal(await frame.locator("video").evaluate(video => video.paused), true);
+      await frame.locator("#play").click();
+      await frame.waitForFunction(() => !document.getElementById("media").paused);
+      await frame.locator("video").evaluate(video => video.pause());
+
+      for (const route of ["/next", "/"]) {
+        await page.evaluate(pathname => history.pushState({}, "", pathname), route);
+        assert.equal(await frame.evaluate(() => document.referrer), referrer);
+        assert.equal(frame.url(), "about:blank");
+        await frame.evaluate(() => document.getElementById("media").play().catch(() => {}));
+        assert.equal(await frame.locator("video").evaluate(video => video.paused), true,
+          "an earlier manual Play must not authorize the retained frame on another route");
+      }
+      await frame.locator("#play").click();
+      await frame.waitForFunction(() => !document.getElementById("media").paused);
     });
 
     await t.test("unlabelled player-specific Play controls work without authorizing Close", async () => {

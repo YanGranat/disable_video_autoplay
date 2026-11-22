@@ -10,6 +10,7 @@ dev_docs/
 *.log
 
 # Local work files
+/workspace/
 temporary_files/
 store-preparation/
 

@@ -23,7 +23,7 @@ npm run test:browser
 
 The browser suite installs the extension in an isolated, temporary Chromium
 profile and serves synthetic media over loopback HTTP. It exercises both content
-worlds, native media promises, live streams and keyboard focus in settings.
+worlds, native media promises, live streams, retained-frame navigation and keyboard focus in settings.
 The test browser permits native autoplay so a paused result proves extension
 behavior rather than Chromium's default autoplay restriction.
 
