@@ -1,4 +1,4 @@
-/* global $, YTAPSettings, YTAPSiteRules, YTAPSettingsStore, YTAPDiagnostics, YTAPStrings, YTAPChannelInput, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability, preserveListFocus */
+/* global $, YTAPSettings, YTAPSiteContext, YTAPSiteRules, YTAPSettingsStore, YTAPDiagnostics, YTAPStrings, YTAPChannelInput, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability, preserveListFocus, finishSettingsLoad, openSettingsSection, showSettingsError */
 
 const { defaults: DEFAULTS, normalizeChannel } = YTAPSettings;
 const { normalizeSite, normalizeSiteLibrary, isDedicatedSite } = YTAPSiteRules;
@@ -16,19 +16,23 @@ let currentSite = "";
 let currentSiteRule = { blocked: false };
 let currentSiteRequestId = 0;
 let currentSettings = { ...DEFAULTS };
-const safeAction = (action) => withUiErrorHandling(async (...args) => {
+let channelPending = false;
+let channelPendingStatus = "statusAdding";
+const safeAction = (action, errorId) => withUiErrorHandling(async (...args) => {
   try { return await action(...args); }
-  finally { applySettingsAvailability(currentSettings); }
-}, recoverSettingsError);
+  finally { if (!document.documentElement.classList.contains("settings-loading")) applySettingsAvailability(currentSettings); }
+}, (error, source) => recoverSettingsError(error, errorId ? $(errorId) : source));
 const setStatus = createStatusSetter("status", 3500);
 const setSiteStatus = createStatusSetter("siteStatus", 3500);
 const settingsView = createSettingsView(renderSettings, recoverSettingsError);
 const load = () => settingsView.load();
 
-async function recoverSettingsError(error) {
+async function recoverSettingsError(error, source) {
   try { await load(); } catch { /* Storage may be unavailable, not merely full. */ }
-  $("settingsError").textContent = t("settingsError");
-  $("settingsError").hidden = false;
+  if (source?.id === "channelInputError") setStatus("");
+  if (source?.id === "status") setStatus("");
+  if (source?.id === "siteStatus") setSiteStatus("");
+  showSettingsError(t, source);
   if (error?.code === "SETTINGS_ITEM_TOO_LARGE") {
     if (error.settingKey === "allowlist") {
       const message = $("channelInputError");
@@ -66,6 +70,8 @@ async function renderSettings(data) {
   applyI18n(t);
   renderList(data.allowlist || []);
   applySettingsAvailability(data);
+  if (channelPending) setStatus(t(channelPendingStatus), { persistent: true });
+  finishSettingsLoad();
   await renderCurrentSite(data);
 }
 
@@ -91,6 +97,8 @@ async function renderCurrentSite(data) {
   toggleBtn.hidden = true;
   manageBtn.textContent = t("manageSiteLibrary", library.length + normalizeSiteLibrary(data.siteExclusions).length);
   const tabUrl = tab?.url || "";
+  $("addCurrentBtn").hidden = !/^https?:\/\//i.test(tabUrl)
+    || YTAPSiteContext.platform(new URL(tabUrl).hostname) !== "youtube";
   if (!/^https?:\/\//i.test(tabUrl)) {
     titleEl.textContent = t("siteLibraryCardTitle");
     card.hidden = false;
@@ -154,6 +162,8 @@ function renderList(items) {
 
     const span = document.createElement("span");
     span.textContent = decodeURIComponent(item);
+    span.title = span.textContent;
+    span.tabIndex = 0;
 
     const btn = document.createElement("button");
     btn.className = "btn-remove";
@@ -163,7 +173,7 @@ function renderList(items) {
     btn.addEventListener("click", safeAction(async () => {
       await YTAPSettingsStore.updateList("allowlist", (items) => (items || []).map(normalizeChannel).filter((x) => x && x !== item));
       await load();
-    }));
+    }, "status"));
 
     li.appendChild(span);
     li.appendChild(btn);
@@ -193,6 +203,7 @@ async function toggleCurrentSite() {
 }
 
 async function addItem() {
+  if (channelPending) return;
   const input = $("newItem");
   const value = normalizeChannel(input.value);
   input.setAttribute("aria-invalid", value ? "false" : "true");
@@ -204,19 +215,36 @@ async function addItem() {
     return;
   }
 
-  let resolved;
-  try { resolved = await YTAPChannelInput.resolve(value); }
-  catch {
-    $("channelInputError").hidden = false;
-    $("channelInputError").setAttribute("data-i18n", "channelResolveFailed");
-    $("channelInputError").textContent = t("channelResolveFailed");
-    return;
+  setChannelPending(true);
+  setStatus(t("statusAdding"), { persistent: true });
+  try {
+    let resolved;
+    try { resolved = await YTAPChannelInput.resolve(value); }
+    catch {
+      $("channelInputError").hidden = false;
+      $("channelInputError").setAttribute("data-i18n", "channelResolveFailed");
+      $("channelInputError").textContent = t("channelResolveFailed");
+      setStatus("");
+      return;
+    }
+    const next = await YTAPSettingsStore.updateList("allowlist", (items) => {
+      const channels = (items || []).map(normalizeChannel).filter(Boolean);
+      return channels.includes(resolved) ? null : [...new Set([...channels, resolved])];
+    });
+    if (normalizeChannel(input.value) === value) input.value = "";
+    await load();
+    setStatus(t(next === null ? "statusDuplicate" : "statusAdded", decodeURIComponent(resolved)));
+    logPopup("allowlist:add", { channel: value });
+  } finally {
+    setChannelPending(false);
   }
-  await YTAPSettingsStore.updateList("allowlist", (items) => Array.from(new Set([...(items || []).map(normalizeChannel).filter(Boolean), resolved])));
-  if (normalizeChannel($("newItem").value) === value) $("newItem").value = "";
-  await load();
-  setStatus(t("statusAdded", decodeURIComponent(resolved)));
-  logPopup("allowlist:add", { channel: value });
+}
+
+function setChannelPending(pending, status = "statusAdding") {
+  channelPending = pending;
+  channelPendingStatus = status;
+  for (const id of ["addBtn", "addCurrentBtn"]) $(id).setAttribute("aria-busy", String(pending));
+  applySettingsAvailability(currentSettings);
 }
 
 async function getActiveTab() {
@@ -237,31 +265,35 @@ async function getChannelFromActiveTab() {
 }
 
 async function addCurrentChannel() {
-  const btn = $("addCurrentBtn");
-  btn.disabled = true;
-  setStatus(t("statusDetecting"));
+  if (channelPending || $("addCurrentBtn").hidden) return;
+  setChannelPending(true, "statusDetecting");
+  setStatus(t("statusDetecting"), { persistent: true });
 
-  const { channel, pageUrl, error } = await getChannelFromActiveTab();
-  logPopup("allowlist:currentChannel", { channel, pageUrl, error });
+  try {
+    const { channel, pageUrl, error } = await getChannelFromActiveTab();
+    logPopup("allowlist:currentChannel", { channel, pageUrl, error });
 
-  if (error) {
-    setStatus(t("statusCantRead"));
-    btn.disabled = false;
-    return;
+    if (error) {
+      setStatus(t("statusCantRead"));
+      return;
+    }
+
+    const value = normalizeChannel(channel);
+    if (!value) {
+      setStatus(t("statusNotFound"));
+      return;
+    }
+
+    const next = await YTAPSettingsStore.updateList("allowlist", (items) => {
+      const channels = (items || []).map(normalizeChannel).filter(Boolean);
+      return channels.includes(value) ? null : [...new Set([...channels, value])];
+    });
+    await load();
+
+    setStatus(t(next === null ? "statusDuplicate" : "statusAllowlisted", channel));
+  } finally {
+    setChannelPending(false);
   }
-
-  const value = normalizeChannel(channel);
-  if (!value) {
-    setStatus(t("statusNotFound"));
-    btn.disabled = false;
-    return;
-  }
-
-  await YTAPSettingsStore.updateList("allowlist", (items) => Array.from(new Set([...(items || []).map(normalizeChannel).filter(Boolean), value])));
-  await load();
-
-  setStatus(t("statusAllowlisted", channel));
-  btn.disabled = false;
 }
 
 $("enabled").addEventListener("change", safeAction(saveFlags));
@@ -272,16 +304,18 @@ $("applyToTwitch").addEventListener("change", safeAction(saveFlags));
 $("applyToKick").addEventListener("change", safeAction(saveFlags));
 $("applyToOtherSites").addEventListener("change", safeAction(saveFlags));
 $("ignoreMiniplayer").addEventListener("change", safeAction(saveFlags));
-$("addBtn").addEventListener("click", safeAction(addItem));
+$("addBtn").addEventListener("click", safeAction(addItem, "channelInputError"));
 $("newItem").addEventListener("input", () => {
   $("newItem").setAttribute("aria-invalid", "false");
   $("channelInputError").hidden = true;
+  $("channelInputError").textContent = "";
+  $("channelInputError").removeAttribute("data-i18n");
 });
-$("addCurrentBtn").addEventListener("click", safeAction(addCurrentChannel));
-$("toggleCurrentSiteBtn").addEventListener("click", safeAction(toggleCurrentSite));
-$("manageSiteLibraryBtn").addEventListener("click", () => chrome.runtime.openOptionsPage());
+$("addCurrentBtn").addEventListener("click", safeAction(addCurrentChannel, "status"));
+$("toggleCurrentSiteBtn").addEventListener("click", safeAction(toggleCurrentSite, "siteStatus"));
+$("manageSiteLibraryBtn").addEventListener("click", safeAction(() => openSettingsSection("siteRules"), "siteStatus"));
 $("newItem").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") safeAction(addItem)();
+  if (e.key === "Enter") safeAction(addItem, "channelInputError")();
 });
 
 (() => {

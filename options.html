@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="settings-loading">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -380,10 +380,37 @@
         outline-color: Highlight;
       }
     }
+
+    html.settings-loading .slider { visibility: hidden; }
+    html:not(.settings-ready) .slider,
+    html:not(.settings-ready) .slider::before { transition: none !important; }
+    .action-error { flex-basis: 100%; color: var(--text); font-size: 12px; line-height: 1.45; margin-top: 5px; }
+    [hidden] { display: none !important; }
+
+    .row { flex-wrap: wrap; }
+    .row > .left { flex: 1; }
+    .card + .card { margin-top: 16px; }
+    .group-title { font-size: 14px; font-weight: 600; line-height: 1.4; margin-bottom: 4px; }
+    .site-library:last-child { border-bottom: 0; }
+    .site-feedback { display: flex; align-items: baseline; gap: 12px; }
+    .site-feedback .site-status { flex: 1; }
+    .undo-btn { border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+    .site-collection { margin-top: 12px; }
+    .site-collection summary { cursor: pointer; color: var(--text-dim); font-size: 12px; }
+    .site-filter { margin-top: 10px; width: 100%; font-size: 12px; }
+    .site-list { max-height: 304px; overflow-y: auto; padding: 2px; scrollbar-gutter: stable; }
+    .site-list::-webkit-scrollbar { width: 4px; }
+    .site-list::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 4px; }
+    .requirement { margin: 0 0 8px; color: var(--text); }
+    .service-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin: 18px 0 2px; font-size: 12px; color: var(--text-dim); }
+    .service-footer a { color: var(--text); text-underline-offset: 3px; }
+    .undo-btn:focus-visible, .site-collection summary:focus-visible, .service-footer a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #siteRules { scroll-margin-top: 16px; }
+    #settingsError { margin: 0 0 16px; border: 1px solid var(--accent); border-radius: 10px; padding: 12px; font-size: 12px; }
   </style>
   </head>
   <body>
-    <div class="container">
+    <main class="container" aria-busy="true">
       <div class="header">
         <div class="header-icon"><img src="icons/icon48.png" alt="" aria-hidden="true" /></div>
         <div>
@@ -393,15 +420,16 @@
       </div>
 
       <p id="settingsError" role="alert" data-i18n="settingsError" hidden>Chrome could not read or save settings. Try again; if a list is full, remove an entry first.</p>
-      <div class="card">
+      <section class="card" id="general" aria-labelledby="generalHeading">
+        <h2 class="group-title" id="generalHeading" data-i18n="groupGeneral">General settings</h2>
         <div class="row">
           <div class="left">
             <div class="label" id="languageLabel" data-i18n="optLanguage">Language</div>
-            <div class="desc" data-i18n="optLanguageDesc">Changes the popup and this page language.</div>
+            <div class="desc" id="languageDescription" data-i18n="optLanguageDesc">Changes the popup and this page language.</div>
           </div>
           <div class="lang">
             <div class="dropdown" id="uiLanguageDropdown">
-              <button class="select-btn" id="uiLanguageBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="uiLanguageMenu" aria-labelledby="languageLabel uiLanguageValue">
+              <button class="select-btn" id="uiLanguageBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="uiLanguageMenu" aria-describedby="languageDescription" aria-labelledby="languageLabel uiLanguageValue">
                 <span class="value" id="uiLanguageValue">Auto</span>
                 <span class="chev" aria-hidden="true"></span>
               </button>
@@ -417,207 +445,242 @@
             </div>
           </div>
         </div>
-
         <div class="row">
           <div class="left">
             <label class="label" for="enabled" data-i18n="optEnabled">Enabled</label>
-            <div class="desc" data-i18n="optEnabledDesc">Stop videos from auto-playing when you open a page.</div>
+            <div class="desc" id="enabledDescription" data-i18n="optEnabledDesc">Stop videos from auto-playing when you open a page.</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="enabled" data-i18n-aria-label="optEnabled" />
+            <input type="checkbox" id="enabled" aria-describedby="enabledDescription enabledError" data-i18n-aria-label="optEnabled" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="enabledError" role="alert" hidden></p>
         </div>
-
-        <div class="row">
-          <div class="left">
-            <label class="label" for="applyToYouTube" data-i18n="optYouTube">Disable autoplay on YouTube</label>
-            <div class="desc" data-i18n="optYouTubeDesc">Master switch for YouTube sites.</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="applyToYouTube" data-i18n-aria-label="optYouTube" />
-            <span class="slider"></span>
-          </label>
-        </div>
-
         <div class="row">
           <div class="left">
             <label class="label" for="stopInsteadOfPause" data-i18n="optMode">Stop buffering (Stop mode)</label>
-            <div class="desc" data-i18n="optModeDesc">Best-effort on direct video sources. YouTube and Twitch keep their sources intact.</div>
+            <div class="desc" id="stopInsteadOfPauseDescription" data-i18n="optModeDesc">Best-effort on direct video sources. YouTube and Twitch keep their sources intact.</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="stopInsteadOfPause" data-i18n-aria-label="optMode" />
+            <input type="checkbox" id="stopInsteadOfPause" aria-describedby="stopInsteadOfPauseDescription stopInsteadOfPauseError" data-i18n-aria-label="optMode" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="stopInsteadOfPauseError" role="alert" hidden></p>
         </div>
 
+      </section>
+
+      <section class="card" id="youtube" aria-labelledby="youtubeHeading">
+        <h2 class="group-title" id="youtubeHeading" data-i18n="groupYouTube">YouTube</h2>
+        <div class="row">
+          <div class="left">
+            <label class="label" for="applyToYouTube" data-i18n="optYouTube">Disable autoplay on YouTube</label>
+            <div class="desc" id="applyToYouTubeDescription" data-i18n="optYouTubeDesc">Master switch for YouTube sites.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="applyToYouTube" aria-describedby="applyToYouTubeDescription applyToYouTubeError" data-i18n-aria-label="optYouTube" disabled />
+            <span class="slider"></span>
+          </label>
+          <p class="action-error" id="applyToYouTubeError" role="alert" hidden></p>
+        </div>
         <div class="row">
           <div class="left">
             <label class="label" for="applyToEmbedded" data-i18n="optEmbedded">Apply to embedded YouTube videos</label>
-            <div class="desc" data-i18n="optEmbeddedDesc">Works inside embedded YouTube players on other websites (iframes).</div>
+            <div class="desc" id="applyToEmbeddedDescription" data-i18n="optEmbeddedDesc">Works inside embedded YouTube players on other websites (iframes).</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="applyToEmbedded" data-i18n-aria-label="optEmbedded" />
+            <input type="checkbox" id="applyToEmbedded" aria-describedby="applyToEmbeddedDescription applyToEmbeddedError" data-i18n-aria-label="optEmbedded" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="applyToEmbeddedError" role="alert" hidden></p>
         </div>
-
         <div class="row">
           <div class="left">
             <label class="label" for="applyToMobile" data-i18n="optMobile">Apply to mobile YouTube (m.youtube.com)</label>
-            <div class="desc" data-i18n="optMobileDesc">Enable this if you use the mobile YouTube site.</div>
+            <div class="desc" id="applyToMobileDescription" data-i18n="optMobileDesc">Enable this if you use the mobile YouTube site.</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="applyToMobile" data-i18n-aria-label="optMobile" />
+            <input type="checkbox" id="applyToMobile" aria-describedby="applyToMobileDescription applyToMobileError" data-i18n-aria-label="optMobile" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="applyToMobileError" role="alert" hidden></p>
         </div>
         <div class="row">
           <div class="left">
-            <label class="label" for="applyToOtherSites" data-i18n="optOtherSites">Block video autoplay on all other websites</label>
-            <div class="desc" data-i18n="optOtherSitesDesc">Turn this off to block autoplay only on websites from your library.</div>
+            <label class="label" for="applyToChannelPlayer" data-i18n="optChannel">Apply to channel page player</label>
+            <div class="desc" id="applyToChannelPlayerDescription" data-i18n="optChannelDesc">Also stop the small video player on channel pages (best-effort).</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="applyToOtherSites" data-i18n-aria-label="optOtherSites" />
+            <input type="checkbox" id="applyToChannelPlayer" aria-describedby="applyToChannelPlayerDescription applyToChannelPlayerError" data-i18n-aria-label="optChannel" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="applyToChannelPlayerError" role="alert" hidden></p>
+        </div>
+        <div class="row">
+          <div class="left">
+            <label class="label" for="applyToPlaylists" data-i18n="optPlaylists">Pause playlist auto-next</label>
+            <div class="desc" id="applyToPlaylistsDescription" data-i18n="optPlaylistsDesc">When off, manually selected videos still pause, but the next playlist item plays automatically.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="applyToPlaylists" aria-describedby="applyToPlaylistsDescription applyToPlaylistsError" data-i18n-aria-label="optPlaylists" disabled />
+            <span class="slider"></span>
+          </label>
+          <p class="action-error" id="applyToPlaylistsError" role="alert" hidden></p>
+        </div>
+        <div class="row">
+          <div class="left">
+            <label class="label" for="applyToShorts" data-i18n="optShorts">Apply to Shorts</label>
+            <div class="desc" id="applyToShortsDescription" data-i18n="optShortsDesc">Shorts often auto-play while scrolling. Keep this off unless you really want it.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="applyToShorts" aria-describedby="applyToShortsDescription applyToShortsError" data-i18n-aria-label="optShorts" disabled />
+            <span class="slider"></span>
+          </label>
+          <p class="action-error" id="applyToShortsError" role="alert" hidden></p>
+        </div>
+        <div class="row">
+          <div class="left">
+            <label class="label" for="ignoreMiniplayer" data-i18n="optIgnoreMini">Ignore miniplayer / PiP</label>
+            <div class="desc" id="ignoreMiniplayerDescription" data-i18n="optIgnoreMiniDesc">Leaves media already playing in the miniplayer or PiP under YouTube's control. If YouTube reuses the exact video kept paused by the extension, it stays paused until you press Play.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="ignoreMiniplayer" aria-describedby="ignoreMiniplayerDescription ignoreMiniplayerError" data-i18n-aria-label="optIgnoreMini" disabled />
+            <span class="slider"></span>
+          </label>
+          <p class="action-error" id="ignoreMiniplayerError" role="alert" hidden></p>
         </div>
 
-        <div class="site-library">
+      </section>
+
+      <section class="card" id="siteRules" aria-labelledby="siteRulesHeading" tabindex="-1">
+        <h2 class="group-title" id="siteRulesHeading" data-i18n="groupWebsites">Website rules</h2>
+        <div class="row">
+          <div class="left">
+            <label class="label" for="applyToOtherSites" data-i18n="optOtherSites">Block video autoplay on all other websites</label>
+            <div class="desc" id="applyToOtherSitesDescription" data-i18n="optOtherSitesDesc">Turn this off to block autoplay only on websites from your library.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="applyToOtherSites" aria-describedby="applyToOtherSitesDescription applyToOtherSitesError" data-i18n-aria-label="optOtherSites" disabled />
+            <span class="slider"></span>
+          </label>
+          <p class="action-error" id="applyToOtherSitesError" role="alert" hidden></p>
+        </div>
+        <section class="site-library" aria-labelledby="siteLibraryHeading">
           <div class="site-library-head">
             <div class="left">
-              <label class="label" for="siteInput" data-i18n="siteLibraryTitle">Website library</label>
-              <div class="desc" data-i18n="siteLibraryDesc">Turn off ‘Block video autoplay on all other websites’ to stop autoplay only on websites in this list. A domain also covers its subdomains.</div>
+              <h3 class="label" id="siteLibraryHeading"><label class="label" for="siteInput" data-i18n="siteLibraryTitle">Website library</label></h3>
+              <div class="desc" id="siteLibraryDescription" data-i18n="siteLibraryDesc">Turn off ‘Block video autoplay on all other websites’ to stop autoplay only on websites in this list. A domain also covers its subdomains.</div>
             </div>
             <span class="site-count" id="siteCount"></span>
           </div>
           <div class="site-form">
-            <input class="site-input" id="siteInput" type="text" maxlength="2048" aria-describedby="siteLibraryStatus" autocomplete="off" spellcheck="false" placeholder="example.com or a full URL" data-i18n-placeholder="siteLibraryPlaceholder" />
+            <input class="site-input" id="siteInput" type="text" maxlength="2048" aria-describedby="siteLibraryDescription siteLibraryStatus" autocomplete="off" spellcheck="false" placeholder="example.com or a full URL" data-i18n-placeholder="siteLibraryPlaceholder" />
             <button class="site-add" id="siteAddBtn" type="button" data-i18n="siteLibraryAdd">Add website</button>
           </div>
-          <div class="site-status" id="siteLibraryStatus" role="status" aria-live="polite"></div>
-          <ul class="site-list" id="siteLibraryList"></ul>
-        </div>
-
-        <div class="site-library">
+          <div class="site-feedback"><div class="site-status" id="siteLibraryStatus" role="status" aria-live="polite"></div><button class="undo-btn" id="siteUndoBtn" type="button" data-i18n="undoLabel" hidden>Undo</button></div>
+          <details class="site-collection" id="siteCollection" open>
+            <summary data-i18n="savedWebsites">Saved websites</summary>
+            <input class="site-input site-filter" id="siteFilter" type="search" autocomplete="off" aria-label="Search websites" data-i18n-aria-label="siteSearchLabel" placeholder="Search websites" data-i18n-placeholder="siteSearchLabel" />
+            <ul class="site-list" id="siteLibraryList"></ul>
+          </details>
+        </section>
+        <section class="site-library" aria-labelledby="exclusionLibraryHeading">
           <div class="site-library-head">
             <div class="left">
-              <label class="label" for="exclusionInput" data-i18n="exclusionTitle">Website exceptions</label>
-              <div class="desc" data-i18n="exclusionDesc">Do not block autoplay on these websites, even when blocking is enabled for all other websites. A domain also covers its subdomains. YouTube, Twitch, and Kick use their own switches.</div>
+              <h3 class="label" id="exclusionLibraryHeading"><label class="label" for="exclusionInput" data-i18n="exclusionTitle">Website exceptions</label></h3>
+              <div class="desc" id="exclusionLibraryDescription" data-i18n="exclusionDesc">Do not block autoplay on these websites, even when blocking is enabled for all other websites. A domain also covers its subdomains. YouTube, Twitch, and Kick use their own switches.</div>
             </div>
             <span class="site-count" id="exclusionCount"></span>
           </div>
           <div class="site-form">
-            <input class="site-input" id="exclusionInput" type="text" maxlength="2048" autocomplete="off" spellcheck="false" placeholder="example.com or a full URL" data-i18n-placeholder="siteLibraryPlaceholder" aria-describedby="exclusionStatus" />
+            <input class="site-input" id="exclusionInput" type="text" maxlength="2048" autocomplete="off" spellcheck="false" placeholder="example.com or a full URL" data-i18n-placeholder="siteLibraryPlaceholder" aria-describedby="exclusionLibraryDescription exclusionStatus" />
             <button class="site-add" id="exclusionAddBtn" type="button" data-i18n="siteLibraryAdd">Add website</button>
           </div>
-          <div class="site-status" id="exclusionStatus" role="status" aria-live="polite"></div>
-          <ul class="site-list" id="exclusionList"></ul>
-        </div>
+          <div class="site-feedback"><div class="site-status" id="exclusionStatus" role="status" aria-live="polite"></div><button class="undo-btn" id="exclusionUndoBtn" type="button" data-i18n="undoLabel" hidden>Undo</button></div>
+          <details class="site-collection" id="exclusionCollection" open>
+            <summary data-i18n="savedWebsites">Saved websites</summary>
+            <input class="site-input site-filter" id="exclusionFilter" type="search" autocomplete="off" aria-label="Search websites" data-i18n-aria-label="siteSearchLabel" placeholder="Search websites" data-i18n-placeholder="siteSearchLabel" />
+            <ul class="site-list" id="exclusionList"></ul>
+          </details>
+        </section>
+      </section>
 
+      <section class="card" id="platforms" aria-labelledby="platformsHeading">
+        <h2 class="group-title" id="platformsHeading" data-i18n="groupPlatforms">Other platforms</h2>
         <div class="row">
           <div class="left">
             <label class="label" for="applyToTwitch" data-i18n="optTwitch">Disable autoplay on Twitch</label>
-            <div class="desc" data-i18n="optTwitchDesc">Also block autoplay on twitch.tv.</div>
+            <div class="desc" id="applyToTwitchDescription" data-i18n="optTwitchDesc">Also block autoplay on twitch.tv.</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="applyToTwitch" data-i18n-aria-label="optTwitch" />
+            <input type="checkbox" id="applyToTwitch" aria-describedby="applyToTwitchDescription applyToTwitchError" data-i18n-aria-label="optTwitch" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="applyToTwitchError" role="alert" hidden></p>
         </div>
         <div class="row">
           <div class="left">
             <label class="label" for="applyToKick" data-i18n="optKick">Disable autoplay on Kick</label>
-            <div class="desc" data-i18n="optKickDesc">Also block autoplay on kick.com.</div>
+            <div class="desc" id="applyToKickDescription" data-i18n="optKickDesc">Also block autoplay on kick.com.</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="applyToKick" data-i18n-aria-label="optKick" />
+            <input type="checkbox" id="applyToKick" aria-describedby="applyToKickDescription applyToKickError" data-i18n-aria-label="optKick" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="applyToKickError" role="alert" hidden></p>
         </div>
 
-        <div class="row">
-          <div class="left">
-            <label class="label" for="applyToChannelPlayer" data-i18n="optChannel">Apply to channel page player</label>
-            <div class="desc" data-i18n="optChannelDesc">Also stop the small video player on channel pages (best-effort).</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="applyToChannelPlayer" data-i18n-aria-label="optChannel" />
-            <span class="slider"></span>
-          </label>
-        </div>
+      </section>
 
-        <div class="row">
-          <div class="left">
-            <label class="label" for="applyToPlaylists" data-i18n="optPlaylists">Pause playlist auto-next</label>
-            <div class="desc" data-i18n="optPlaylistsDesc">When off, manually selected videos still pause, but the next playlist item plays automatically.</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="applyToPlaylists" data-i18n-aria-label="optPlaylists" />
-            <span class="slider"></span>
-          </label>
-        </div>
-
-        <div class="row">
-          <div class="left">
-            <label class="label" for="applyToShorts" data-i18n="optShorts">Apply to Shorts</label>
-            <div class="desc" data-i18n="optShortsDesc">Shorts often auto-play while scrolling. Keep this off unless you really want it.</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="applyToShorts" data-i18n-aria-label="optShorts" />
-            <span class="slider"></span>
-          </label>
-        </div>
-
-        <div class="row">
-          <div class="left">
-            <label class="label" for="ignoreMiniplayer" data-i18n="optIgnoreMini">Ignore miniplayer / PiP</label>
-            <div class="desc" data-i18n="optIgnoreMiniDesc">Leaves media already playing in the miniplayer or PiP under YouTube's control. If YouTube reuses the exact video kept paused by the extension, it stays paused until you press Play.</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="ignoreMiniplayer" data-i18n-aria-label="optIgnoreMini" />
-            <span class="slider"></span>
-          </label>
-        </div>
-
+      <section class="card" id="tabs" aria-labelledby="tabsHeading">
+        <h2 class="group-title" id="tabsHeading" data-i18n="groupTabs">Tab behavior</h2>
         <div class="row">
           <div class="left">
             <label class="label" for="pauseOnHidden" data-i18n="optPauseHidden">Pause when tab is hidden</label>
-            <div class="desc" data-i18n="optPauseHiddenDesc">Automatically pauses playback when you switch away from a covered tab.</div>
+            <div class="desc" id="pauseOnHiddenDescription" data-i18n="optPauseHiddenDesc">Automatically pauses playback when you switch away from a covered tab.</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="pauseOnHidden" data-i18n-aria-label="optPauseHidden" />
+            <input type="checkbox" id="pauseOnHidden" aria-describedby="pauseOnHiddenDescription pauseOnHiddenError" data-i18n-aria-label="optPauseHidden" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="pauseOnHiddenError" role="alert" hidden></p>
         </div>
-
         <div class="row">
           <div class="left">
             <label class="label" for="resumeOnVisible" data-i18n="optResumeVisible">Resume when tab is focused</label>
-            <div class="desc" data-i18n="optResumeVisibleDesc">Resumes only manually started videos paused by the extension when the tab was hidden.</div>
+            <div class="desc" id="resumeOnVisibleDescription" data-i18n="optResumeVisibleDesc">Resumes only manually started videos paused by the extension when the tab was hidden.</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="resumeOnVisible" data-i18n-aria-label="optResumeVisible" />
+            <input type="checkbox" id="resumeOnVisible" aria-describedby="resumeOnVisibleDescription resumeOnVisibleError resumeRequirement" data-i18n-aria-label="optResumeVisible" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="resumeOnVisibleError" role="alert" hidden></p>
         </div>
+        <p class="desc requirement" id="resumeRequirement" data-i18n="resumeRequirement">Turn on “Pause when tab is hidden” to use this setting.</p>
 
+      </section>
+
+      <section class="card" id="diagnostics" aria-labelledby="diagnosticsHeading">
+        <h2 class="group-title" id="diagnosticsHeading" data-i18n="groupDiagnostics">Diagnostics</h2>
         <div class="row">
           <div class="left">
             <label class="label" for="debug" data-i18n="optDebug">Debug logs</label>
-            <div class="desc" data-i18n="optDebugDesc">Adds detailed logs in the page Console (for troubleshooting).</div>
+            <div class="desc" id="debugDescription" data-i18n="optDebugDesc">Adds detailed logs in the page Console (for troubleshooting).</div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="debug" data-i18n-aria-label="optDebug" />
+            <input type="checkbox" id="debug" aria-describedby="debugDescription debugError" data-i18n-aria-label="optDebug" disabled />
             <span class="slider"></span>
           </label>
+          <p class="action-error" id="debugError" role="alert" hidden></p>
         </div>
-      </div>
+
+      </section>
 
       <div class="note" data-i18n="optNote">
         Most setting changes apply immediately. Reload an already open tab if its player does not update.
       </div>
-    </div>
+      <footer class="service-footer"><span><span data-i18n="versionLabel">Version</span> <span id="extensionVersion"></span></span><a href="https://github.com/YanGranat/disable_video_autoplay/issues" target="_blank" rel="noopener noreferrer" data-i18n="reportIssue">Report a problem</a></footer>
+    </main>
 
     <script src="vendor/domain-parser.js"></script>
     <script src="core/site-context.js"></script>

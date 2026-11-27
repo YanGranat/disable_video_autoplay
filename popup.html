@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="settings-loading">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -452,6 +452,19 @@
         outline-color: Highlight;
       }
     }
+
+    html.settings-loading .slider { visibility: hidden; }
+    html:not(.settings-ready) .slider,
+    html:not(.settings-ready) .slider::before { transition: none !important; }
+    .action-error { flex-basis: 100%; color: var(--text); font-size: 12px; line-height: 1.45; margin-top: 5px; }
+    [hidden] { display: none !important; }
+
+    .toggle-row { flex-wrap: wrap; column-gap: 10px; }
+    .toggle-label { flex: 1; min-width: 0; }
+    .setting-help { font-size: 11px; color: var(--text-dim); margin: 2px 0 5px; }
+    .setting-help summary { cursor: pointer; }
+    .setting-help p { margin-top: 4px; line-height: 1.5; color: var(--text); }
+    .channel-item span:focus { white-space: normal; overflow-wrap: anywhere; outline: 2px solid var(--accent); outline-offset: 2px; }
   </style>
 </head>
 <body>
@@ -465,9 +478,10 @@
       </div>
     </div>
 
+  <main aria-busy="true">
   <p id="settingsError" class="settings-error" role="alert" data-i18n="settingsError" hidden>Chrome could not read or save settings. Try again; if a list is full, remove an entry first.</p>
   <div class="section">
-    <div class="section-title" data-i18n="generalTitle">General settings</div>
+    <h2 class="section-title" data-i18n="generalTitle">General settings</h2>
     <div class="toggle-row">
       <span class="toggle-label" id="languageLabel" data-i18n="languageLabel">Language</span>
       <div class="dropdown" id="uiLanguageDropdown">
@@ -489,78 +503,88 @@
     <div class="toggle-row">
       <label class="toggle-label" for="enabled" data-i18n="enabledLabel">Enabled</label>
       <label class="switch">
-        <input type="checkbox" id="enabled" data-i18n-aria-label="enabledLabel" />
+        <input type="checkbox" id="enabled" aria-describedby="enabledError" data-i18n-aria-label="enabledLabel" disabled />
         <span class="slider"></span>
       </label>
+    <p class="action-error" id="enabledError" role="alert" hidden></p>
     </div>
   </div>
 
   <div class="section">
-    <div class="section-title" data-i18n="youtubeTitle">YouTube</div>
+    <h2 class="section-title" data-i18n="youtubeTitle">YouTube</h2>
     <div class="toggle-row">
       <label class="toggle-label" for="applyToYouTube" data-i18n="applyToYouTubeLabel">Disable autoplay on YouTube</label>
       <label class="switch">
-        <input type="checkbox" id="applyToYouTube" data-i18n-aria-label="applyToYouTubeLabel" />
+        <input type="checkbox" id="applyToYouTube" aria-describedby="applyToYouTubeError" data-i18n-aria-label="applyToYouTubeLabel" disabled />
         <span class="slider"></span>
       </label>
+    <p class="action-error" id="applyToYouTubeError" role="alert" hidden></p>
     </div>
     <div class="toggle-row">
       <label class="toggle-label" for="applyToPlaylists" data-i18n="applyToPlaylistsLabel">Pause playlist auto-next</label>
       <label class="switch">
-        <input type="checkbox" id="applyToPlaylists" data-i18n-aria-label="applyToPlaylistsLabel" />
+        <input type="checkbox" id="applyToPlaylists" aria-describedby="applyToPlaylistsError playlistHelp" data-i18n-aria-label="applyToPlaylistsLabel" disabled />
         <span class="slider"></span>
       </label>
+    <p class="action-error" id="applyToPlaylistsError" role="alert" hidden></p>
     </div>
+    <details class="setting-help"><summary data-i18n="helpLabel">How this works</summary><p id="playlistHelp" data-i18n="playlistHelp">When off, the next playlist video plays automatically. Videos you select yourself still open paused.</p></details>
     <div class="toggle-row">
       <label class="toggle-label" for="applyToShorts" data-i18n="applyToShortsLabel">Apply to Shorts</label>
       <label class="switch">
-        <input type="checkbox" id="applyToShorts" data-i18n-aria-label="applyToShortsLabel" />
+        <input type="checkbox" id="applyToShorts" aria-describedby="applyToShortsError" data-i18n-aria-label="applyToShortsLabel" disabled />
         <span class="slider"></span>
       </label>
+    <p class="action-error" id="applyToShortsError" role="alert" hidden></p>
     </div>
     <div class="toggle-row">
       <label class="toggle-label" for="ignoreMiniplayer" data-i18n="ignoreMiniplayerLabel">Ignore miniplayer &amp; PiP</label>
       <label class="switch">
-        <input type="checkbox" id="ignoreMiniplayer" data-i18n-aria-label="ignoreMiniplayerLabel" />
+        <input type="checkbox" id="ignoreMiniplayer" aria-describedby="ignoreMiniplayerError miniplayerHelp" data-i18n-aria-label="ignoreMiniplayerLabel" disabled />
         <span class="slider"></span>
       </label>
+    <p class="action-error" id="ignoreMiniplayerError" role="alert" hidden></p>
     </div>
-    <div class="section-title" style="margin-top:12px" data-i18n="allowlistTitle">Channel allowlist</div>
+    <details class="setting-help"><summary data-i18n="helpLabel">How this works</summary><p id="miniplayerHelp" data-i18n="miniplayerHelp">Leaves already playing miniplayer and picture-in-picture video alone. A video paused by this extension stays paused until you press Play.</p></details>
+    <h3 class="section-title" style="margin-top:12px" data-i18n="allowlistTitle">Channel allowlist</h3>
     <div class="add-row">
       <input id="newItem" maxlength="2048" placeholder="/@handle" data-i18n-placeholder="allowlistPlaceholder" aria-label="Channel allowlist" data-i18n-aria-label="allowlistTitle" aria-describedby="channelInputError" />
       <button class="btn-add" id="addBtn" data-i18n="addBtn">Add</button>
     </div>
-    <div class="status input-error" id="channelInputError" role="alert" data-i18n="channelInputInvalid" hidden>Enter a YouTube @handle or channel URL.</div>
-    <button class="btn-secondary" id="addCurrentBtn" data-i18n="addCurrentBtn">Allowlist current channel</button>
+    <div class="status input-error" id="channelInputError" role="alert" hidden></div>
+    <button class="btn-secondary" id="addCurrentBtn" hidden data-i18n="addCurrentBtn">Allowlist current channel</button>
     <div class="status" id="status" role="status" aria-live="polite"></div>
     <ul class="channel-list" id="list"></ul>
   </div>
 
   <div class="section">
-    <div class="section-title" data-i18n="otherSitesTitle">Other sites</div>
+    <h2 class="section-title" data-i18n="otherSitesTitle">Other sites</h2>
     <div class="toggle-row">
       <label class="toggle-label" for="applyToOtherSites" data-i18n="applyToOtherSitesLabel">Block video autoplay on all other websites</label>
       <label class="switch">
-        <input type="checkbox" id="applyToOtherSites" data-i18n-aria-label="applyToOtherSitesLabel" />
+        <input type="checkbox" id="applyToOtherSites" aria-describedby="applyToOtherSitesError" data-i18n-aria-label="applyToOtherSitesLabel" disabled />
         <span class="slider"></span>
       </label>
+    <p class="action-error" id="applyToOtherSitesError" role="alert" hidden></p>
     </div>
     <div class="toggle-row">
       <label class="toggle-label" for="applyToTwitch" data-i18n="applyToTwitchLabel">Disable autoplay on Twitch</label>
       <label class="switch">
-        <input type="checkbox" id="applyToTwitch" data-i18n-aria-label="applyToTwitchLabel" />
+        <input type="checkbox" id="applyToTwitch" aria-describedby="applyToTwitchError" data-i18n-aria-label="applyToTwitchLabel" disabled />
         <span class="slider"></span>
       </label>
+    <p class="action-error" id="applyToTwitchError" role="alert" hidden></p>
     </div>
     <div class="toggle-row">
       <label class="toggle-label" for="applyToKick" data-i18n="applyToKickLabel">Disable autoplay on Kick</label>
       <label class="switch">
-        <input type="checkbox" id="applyToKick" data-i18n-aria-label="applyToKickLabel" />
+        <input type="checkbox" id="applyToKick" aria-describedby="applyToKickError" data-i18n-aria-label="applyToKickLabel" disabled />
         <span class="slider"></span>
       </label>
+    <p class="action-error" id="applyToKickError" role="alert" hidden></p>
     </div>
     <div class="current-site-card" id="currentSiteCard" hidden>
-      <div class="section-title" id="currentSiteTitle" data-i18n="currentSiteTitle">Current site</div>
+      <h3 class="section-title" id="currentSiteTitle" data-i18n="currentSiteTitle">Current site</h3>
       <div id="currentSiteDetails">
         <span class="current-site-host" id="currentSiteHost">...</span>
         <span class="current-site-mode" id="currentSiteMode"></span>
@@ -575,6 +599,7 @@
     <button class="footer-link" id="openOptions" type="button" data-i18n="advancedLink">Advanced settings</button>
   </div>
 
+  </main>
   <script src="vendor/domain-parser.js"></script>
   <script src="core/site-context.js"></script>
   <script src="core/settings.js"></script>

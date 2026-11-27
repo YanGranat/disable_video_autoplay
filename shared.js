@@ -3,7 +3,7 @@
  * Settings values, persistence and diagnostic privacy have separate owners.
  */
 /* global YTAPSettingsStore, YTAPSettings */
-/* exported resolveUiLanguage, makeTranslator, applyI18n, createStatusSetter, initLanguageDropdown, createSettingsView, applySettingsAvailability, preserveListFocus */
+/* exported resolveUiLanguage, makeTranslator, applyI18n, createStatusSetter, initLanguageDropdown, createSettingsView, applySettingsAvailability, preserveListFocus, finishSettingsLoad, openSettingsSection, showSettingsError, clearSettingsError */
 
 const $ = (id) => document.getElementById(id);
 
@@ -91,13 +91,14 @@ function applyI18n(t) {
 // Each status area owns its timer; an old message must not clear a newer one.
 function createStatusSetter(elementId, durationMs) {
   let timer = null;
-  return (text) => {
+  return (text, { persistent = false } = {}) => {
     const element = $(elementId);
     if (!element) return;
     clearTimeout(timer);
     timer = null;
+    element.removeAttribute("data-i18n");
     element.textContent = text || "";
-    if (!text) return;
+    if (!text || persistent) return;
     timer = setTimeout(() => {
       element.textContent = "";
       timer = null;
@@ -198,14 +199,56 @@ function preserveListFocus(list, input) {
 // operations visible without printing stored values or raw browser errors.
 function withUiErrorHandling(action, onError) {
   return async (...args) => {
+    const source = args[0]?.currentTarget;
+    clearSettingsError(source);
     const error = $("settingsError");
     if (error) error.hidden = true;
     try {
       return await action(...args);
     } catch (failure) {
-      await onError(failure);
+      await onError(failure, source);
     }
   };
+}
+
+function showSettingsError(t, source) {
+  const local = source?.id ? $(`${source.id}Error`) : null;
+  const feedback = local || (source?.getAttribute("role") ? source : $("settingsError"));
+  feedback.setAttribute("data-i18n", "settingsError");
+  feedback.textContent = t("settingsError");
+  feedback.hidden = false;
+}
+
+function clearSettingsError(source) {
+  const feedback = source?.id ? $(`${source.id}Error`) : null;
+  if (!feedback) return;
+  feedback.hidden = true;
+  feedback.textContent = "";
+  feedback.removeAttribute("data-i18n");
+}
+
+// The first visible state comes from storage; only later user changes animate.
+function finishSettingsLoad() {
+  const root = document.documentElement;
+  if (!root.classList.contains("settings-loading")) return;
+  root.classList.remove("settings-loading");
+  document.querySelector("main")?.setAttribute("aria-busy", "false");
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add("settings-ready")));
+}
+
+async function openSettingsSection(id) {
+  const url = chrome.runtime.getURL("options.html");
+  const options = chrome.extension.getViews({ type: "tab" }).find((view) =>
+    view.location.href.split("#")[0] === url);
+  if (!options) {
+    await chrome.tabs.create({ url: `${url}#${encodeURIComponent(id)}` });
+    return;
+  }
+  await chrome.runtime.openOptionsPage();
+  options.location.hash = id;
+  const section = options.document.getElementById(id);
+  section?.scrollIntoView({ block: "start" });
+  section?.focus({ preventScroll: true });
 }
 
 // Storage events update the current view without replacing input drafts.
@@ -252,6 +295,7 @@ function createSettingsView(render, onError) {
 }
 
 function applySettingsAvailability(data) {
+  if ($("enabled")) $("enabled").disabled = false;
   const youtubeKeys = ["applyToShorts", "applyToPlaylists", "ignoreMiniplayer", "applyToEmbedded", "applyToMobile", "applyToChannelPlayer"];
   for (const key of YTAPSettings.mainKeys) {
     const input = $(key);
@@ -262,11 +306,11 @@ function applySettingsAvailability(data) {
   }
   for (const id of ["newItem", "addBtn", "addCurrentBtn"]) {
     const input = $(id);
-    if (input) input.disabled = !data.enabled || data.applyToYouTube === false;
+    if (input) input.disabled = !data.enabled || data.applyToYouTube === false || input.getAttribute("aria-busy") === "true";
   }
-  for (const id of ["siteInput", "siteAddBtn", "exclusionInput", "exclusionAddBtn", "toggleCurrentSiteBtn"]) {
+  for (const id of ["siteInput", "siteAddBtn", "exclusionInput", "exclusionAddBtn", "siteUndoBtn", "exclusionUndoBtn", "toggleCurrentSiteBtn"]) {
     const input = $(id);
-    if (input) input.disabled = !data.enabled;
+    if (input) input.disabled = !data.enabled || input.getAttribute("aria-busy") === "true";
   }
   for (const button of document.querySelectorAll(".btn-remove")) button.disabled = !data.enabled || data.applyToYouTube === false;
   for (const button of document.querySelectorAll(".site-remove")) button.disabled = !data.enabled;

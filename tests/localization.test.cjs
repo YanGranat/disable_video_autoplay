@@ -59,6 +59,15 @@ for (const surface of ["popup", "options"]) {
   });
 }
 
+test("dependency guidance names the exact localized setting", () => {
+  const context = uiContext();
+  runScripts(context, ["ui/options-strings.js"]);
+  const strings = vm.runInContext("YTAPStrings", context);
+  for (const [locale, dictionary] of Object.entries(strings)) {
+    assert.ok(dictionary.resumeRequirement.includes(dictionary.optPauseHidden), locale);
+  }
+});
+
 test("website counters select singular, plural and Slavic count forms", () => {
   const context = uiContext();
   runScripts(context, ["ui/options-strings.js"]);

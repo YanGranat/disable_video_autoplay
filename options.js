@@ -1,26 +1,28 @@
-/* global $, YTAPSettings, YTAPSiteRules, YTAPSettingsStore, YTAPStrings, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability, preserveListFocus */
+/* global $, YTAPSettings, YTAPSiteRules, YTAPSettingsStore, YTAPStrings, resolveUiLanguage, makeTranslator, setSelectedUiLanguage, applyI18n, initLanguageDropdown, withUiErrorHandling, createStatusSetter, createSettingsView, applySettingsAvailability, preserveListFocus, finishSettingsLoad, showSettingsError */
 
 const { normalizeSite, normalizeSiteLibrary, siteMatchesHostname, isDedicatedSite } = YTAPSiteRules;
 
 let currentLang = "en";
 let t = makeTranslator(YTAPStrings, currentLang);
 let currentSettings = { ...YTAPSettings.defaults };
-const safeAction = (action) => withUiErrorHandling(async (...args) => {
+const removals = new Map();
+const safeAction = (action, errorId) => withUiErrorHandling(async (...args) => {
   try { return await action(...args); }
-  finally { applySettingsAvailability(currentSettings); }
-}, recoverSettingsError);
+  finally { if (!document.documentElement.classList.contains("settings-loading")) applySettingsAvailability(currentSettings); }
+}, (error, source) => recoverSettingsError(error, errorId ? $(errorId) : source));
 const setSiteLibraryStatus = createStatusSetter("siteLibraryStatus", 4000);
 const setExclusionStatus = createStatusSetter("exclusionStatus", 4000);
 const settingsView = createSettingsView(renderSettings, recoverSettingsError);
 const load = () => settingsView.load();
 
-async function recoverSettingsError(error) {
+async function recoverSettingsError(error, source) {
   try { await load(); } catch { /* Storage may be unavailable, not merely full. */ }
-  $("settingsError").textContent = t("settingsError");
-  $("settingsError").hidden = false;
+  if (source?.id === "siteLibraryStatus") setSiteLibraryStatus("");
+  if (source?.id === "exclusionStatus") setExclusionStatus("");
+  showSettingsError(t, source);
   if (error?.code === "SETTINGS_ITEM_TOO_LARGE") {
     const excluded = error.settingKey === "siteExclusions";
-    (excluded ? setExclusionStatus : setSiteLibraryStatus)(t("listFull"));
+    (excluded ? setExclusionStatus : setSiteLibraryStatus)(t("listFull"), { persistent: true });
     $(excluded ? "exclusionInput" : "siteInput").setAttribute("aria-invalid", "true");
   }
 }
@@ -51,11 +53,20 @@ function renderSettings(data) {
   $("pauseOnHidden").checked = !!data.pauseOnHidden;
   $("resumeOnVisible").checked = !!data.resumeOnVisible;
   $("debug").checked = !!data.debug;
+  $("debug").disabled = false;
 
   applyI18n(t);
   renderSiteLibrary(data.siteLibrary);
   renderSiteLibrary(data.siteExclusions, true);
+  $("resumeRequirement").hidden = !!data.pauseOnHidden;
+  $("resumeOnVisible").setAttribute("aria-describedby", `resumeOnVisibleDescription resumeOnVisibleError${data.pauseOnHidden ? "" : " resumeRequirement"}`);
+  $("extensionVersion").textContent = chrome.runtime.getManifest().version;
+  for (const excluded of [false, true]) {
+    const removal = removals.get(excluded);
+    if (removal) $(excluded ? "exclusionUndoBtn" : "siteUndoBtn").setAttribute("aria-label", `${t("undoLabel")}: ${removal.site}`);
+  }
   applySettingsAvailability(data);
+  finishSettingsLoad();
 }
 
 function renderSiteLibrary(items, excluded = false) {
@@ -64,17 +75,21 @@ function renderSiteLibrary(items, excluded = false) {
   const restoreFocus = preserveListFocus(list, $(excluded ? "exclusionInput" : "siteInput"));
   list.innerHTML = "";
   $(excluded ? "exclusionCount" : "siteCount").textContent = t("siteLibraryCount", library.length);
+  const filter = $(excluded ? "exclusionFilter" : "siteFilter");
+  filter.hidden = library.length === 0;
+  const query = filter.value.trim().toLowerCase();
+  const filtered = library.filter((site) => site.includes(query));
 
-  if (library.length === 0) {
+  if (filtered.length === 0) {
     const empty = document.createElement("li");
     empty.className = "site-empty";
-    empty.textContent = t(excluded ? "exclusionEmpty" : "siteLibraryEmpty");
+    empty.textContent = t(library.length ? "siteSearchEmpty" : excluded ? "exclusionEmpty" : "siteLibraryEmpty");
     list.appendChild(empty);
     restoreFocus();
     return;
   }
 
-  library.forEach((site) => {
+  filtered.forEach((site) => {
     const item = document.createElement("li");
     item.className = "site-item";
     item.setAttribute("data-key", site);
@@ -90,7 +105,7 @@ function renderSiteLibrary(items, excluded = false) {
     remove.textContent = t("removeTitle");
     remove.title = t("siteLibraryRemove", site);
     remove.setAttribute("aria-label", t("siteLibraryRemove", site));
-    remove.addEventListener("click", safeAction(() => removeSite(site, excluded)));
+    remove.addEventListener("click", safeAction(() => removeSite(site, excluded), excluded ? "exclusionStatus" : "siteLibraryStatus"));
 
     item.appendChild(name);
     item.appendChild(remove);
@@ -105,12 +120,13 @@ async function addSite(excluded = false) {
   const site = normalizeSite(input.value);
   input.setAttribute("aria-invalid", site ? "false" : "true");
   if (!site) {
-    status(t("siteLibraryInvalid"));
+    status(t("siteLibraryInvalid"), { persistent: true });
     input.focus();
     return;
   }
   if (isDedicatedSite(site)) {
-    status(t("siteLibraryDedicated"));
+    input.setAttribute("aria-invalid", "true");
+    status(t("siteLibraryDedicated"), { persistent: true });
     input.focus();
     return;
   }
@@ -129,20 +145,71 @@ async function addSite(excluded = false) {
 
   if (normalizeSite(input.value) === site) input.value = "";
   input.setAttribute("aria-invalid", "false");
+  clearUndo(excluded);
+  $(excluded ? "exclusionFilter" : "siteFilter").value = "";
+  $(excluded ? "exclusionCollection" : "siteCollection").open = true;
   await load();
   status(t("siteLibraryAdded", site));
 }
 
 async function removeSite(site, excluded = false) {
-  await YTAPSettingsStore.updateList(excluded ? "siteExclusions" : "siteLibrary", (items) => normalizeSiteLibrary(items).filter((item) => item !== site));
+  const next = await YTAPSettingsStore.updateList(excluded ? "siteExclusions" : "siteLibrary", (items) => {
+    const library = normalizeSiteLibrary(items);
+    return library.includes(site) ? library.filter((item) => item !== site) : null;
+  });
+  if (next === null) return;
+  removals.set(excluded, { site });
+  $(excluded ? "exclusionUndoBtn" : "siteUndoBtn").hidden = false;
   await load();
-  (excluded ? setExclusionStatus : setSiteLibraryStatus)(t("siteLibraryRemoved", site));
+  (excluded ? setExclusionStatus : setSiteLibraryStatus)(t("siteLibraryRemoved", site), { persistent: true });
+}
+
+function clearUndo(excluded) {
+  removals.delete(excluded);
+  $(excluded ? "exclusionUndoBtn" : "siteUndoBtn").hidden = true;
+}
+
+async function undoRemove(excluded) {
+  const removal = removals.get(excluded);
+  if (!removal || removal.pending) return;
+  removal.pending = true;
+  const button = $(excluded ? "exclusionUndoBtn" : "siteUndoBtn");
+  const focused = document.activeElement === button;
+  button.setAttribute("aria-busy", "true");
+  applySettingsAvailability(currentSettings);
+  try {
+    const next = await YTAPSettingsStore.updateList(excluded ? "siteExclusions" : "siteLibrary", (items) => {
+      const library = normalizeSiteLibrary(items);
+      if (library.some((rule) => siteMatchesHostname(removal.site, rule))) return null;
+      // A later, narrower rule is a new decision, not part of the old removal.
+      if (library.some((rule) => siteMatchesHostname(rule, removal.site))) throw Object.assign(new Error("Related rules changed"), { code: "SITE_RULE_CHANGED" });
+      return normalizeSiteLibrary([...library, removal.site]);
+    });
+    if (removals.get(excluded) === removal) clearUndo(excluded);
+    await load();
+    if (!removals.has(excluded)) (excluded ? setExclusionStatus : setSiteLibraryStatus)(t(next === null ? "siteRuleDuplicate" : "siteLibraryRestored", removal.site));
+    if (focused && (document.activeElement === button || document.activeElement === document.body)) {
+      const list = $(excluded ? "exclusionList" : "siteLibraryList");
+      const row = Array.from(list.children).find(item => item.getAttribute("data-key") === removal.site);
+      (row?.lastElementChild || $(excluded ? "exclusionInput" : "siteInput")).focus();
+    }
+  } catch (error) {
+    if (error.code !== "SITE_RULE_CHANGED") throw error;
+    if (removals.get(excluded) === removal) {
+      clearUndo(excluded);
+      (excluded ? setExclusionStatus : setSiteLibraryStatus)(t("siteUndoChanged"), { persistent: true });
+    }
+  } finally {
+    removal.pending = false;
+    button.setAttribute("aria-busy", "false");
+  }
 }
 
 async function save(event) {
   // Write only the changed setting. Other open UI pages may have newer values
   // for unrelated flags, and a full reload can roll back a rapid second click.
-  await settingsView.save(event.currentTarget.id, event.currentTarget.checked);
+  const id = event.currentTarget.id;
+  await settingsView.save(id, event.currentTarget.checked);
 }
 
 [
@@ -168,12 +235,27 @@ async function save(event) {
 });
 
 initLanguageDropdown(load, recoverSettingsError);
-$("siteAddBtn").addEventListener("click", safeAction(() => addSite()));
-$("exclusionAddBtn").addEventListener("click", safeAction(() => addSite(true)));
+$("siteAddBtn").addEventListener("click", safeAction(() => addSite(), "siteLibraryStatus"));
+$("exclusionAddBtn").addEventListener("click", safeAction(() => addSite(true), "exclusionStatus"));
 $("exclusionInput").addEventListener("keydown", (event) => {
-  if (event.key === "Enter") safeAction(() => addSite(true))();
+  if (event.key === "Enter") safeAction(() => addSite(true), "exclusionStatus")();
 });
 $("siteInput").addEventListener("keydown", (event) => {
-  if (event.key === "Enter") safeAction(addSite)();
+  if (event.key === "Enter") safeAction(addSite, "siteLibraryStatus")();
 });
-safeAction(load)();
+for (const excluded of [false, true]) {
+  const input = $(excluded ? "exclusionInput" : "siteInput");
+  input.addEventListener("input", () => {
+    input.setAttribute("aria-invalid", "false");
+    (excluded ? setExclusionStatus : setSiteLibraryStatus)("");
+  });
+  $(excluded ? "exclusionFilter" : "siteFilter").addEventListener("input", () => renderSiteLibrary(currentSettings[excluded ? "siteExclusions" : "siteLibrary"], excluded));
+  $(excluded ? "exclusionUndoBtn" : "siteUndoBtn").addEventListener("click", safeAction(() => undoRemove(excluded), excluded ? "exclusionStatus" : "siteLibraryStatus"));
+}
+const focusSection = () => {
+  if (location.hash !== "#siteRules") return;
+  $("siteRules").scrollIntoView({ block: "start" });
+  $("siteRules").focus({ preventScroll: true });
+};
+window.addEventListener("hashchange", focusSection);
+safeAction(async () => { await load(); focusSection(); })();

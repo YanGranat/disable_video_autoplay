@@ -1,4 +1,4 @@
-/* global chrome, document, history, MediaRecorder, getComputedStyle, matchMedia */
+/* global chrome, document, window, location, requestAnimationFrame, history, MediaRecorder, getComputedStyle, matchMedia */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -205,6 +205,76 @@ test("installed extension preserves media and settings contracts in Chromium", {
         await page.keyboard.press("Enter");
         await page.waitForFunction(inputId => document.activeElement === document.getElementById(inputId), input);
       }
+    });
+
+    await t.test("saved switches are correct from their first visible frame", async () => {
+      const view = await context.newPage();
+      try {
+        await view.addInitScript(() => {
+          const read = chrome.storage.sync.get.bind(chrome.storage.sync);
+          chrome.storage.sync.get = async (...args) => {
+            await new Promise(resolve => setTimeout(resolve, 60));
+            return read(...args);
+          };
+          window.settingsFrames = [];
+          let remaining = 12;
+          const inspect = () => {
+            const input = document.getElementById("enabled");
+            if (input) {
+              const slider = input.nextElementSibling;
+              window.settingsFrames.push({ checked: input.checked, visible: getComputedStyle(slider).visibility,
+                transform: getComputedStyle(slider, "::before").transform });
+            }
+            if (--remaining) requestAnimationFrame(inspect);
+            else window.settingsFramesDone = true;
+          };
+          requestAnimationFrame(inspect);
+        });
+        for (const [surface, offset] of [["popup", 18], ["options", 20]]) {
+          await view.goto(`chrome-extension://${id}/${surface}.html`);
+          await view.waitForFunction(() => window.settingsFramesDone && document.documentElement.classList.contains("settings-ready"));
+          const frames = await view.evaluate(() => window.settingsFrames.filter(frame => frame.visible === "visible"));
+          assert.ok(frames.length > 0);
+          assert.ok(frames.every(frame => frame.checked && frame.transform === `matrix(1, 0, 0, 1, ${offset}, 0)`));
+          if (surface === "options") assert.equal(await view.locator("#debug").isDisabled(), false);
+          const descriptions = await view.locator("#enabled").evaluate(input => input.getAttribute("aria-describedby").split(" ").map(id => document.getElementById(id).textContent).join(" "));
+          assert.doesNotMatch(descriptions, /could not/);
+          assert.equal(await view.locator(".slider").first().evaluate(slider => getComputedStyle(slider, "::before").transitionDuration), "0.2s");
+        }
+      } finally { await view.close(); }
+    });
+
+    await t.test("website rules open at their section and reuse a loaded options tab", async () => {
+      await page.goto(`chrome-extension://${id}/popup.html`);
+      await page.waitForFunction(() => document.documentElement.classList.contains("settings-ready"));
+      const opened = context.waitForEvent("page");
+      await page.locator("#manageSiteLibraryBtn").click();
+      const options = await opened;
+      try {
+        await options.waitForFunction(() => location.hash === "#siteRules" && document.activeElement.id === "siteRules");
+        await options.evaluate(() => { location.hash = ""; window.scrollTo(0, 0); });
+        await page.bringToFront();
+        await page.locator("#manageSiteLibraryBtn").click();
+        await options.waitForFunction(() => location.hash === "#siteRules" && document.activeElement.id === "siteRules");
+        assert.equal(context.pages().filter(tab => tab.url().includes("options.html")).length, 1);
+      } finally { await options.close(); }
+    });
+
+    await t.test("site search and undo preserve an edit from another view", async () => {
+      await worker.evaluate(() => chrome.storage.sync.set({ uiLanguage: "en", siteLibrary: ["alpha.example", "beta.example"] }));
+      await page.goto(`chrome-extension://${id}/options.html`);
+      await page.locator("#siteFilter").fill("alpha");
+      await page.waitForFunction(() => document.querySelectorAll("#siteLibraryList .site-item").length === 1);
+      await page.locator("#siteLibraryList button").click();
+      await page.waitForFunction(() => !document.getElementById("siteUndoBtn").hidden);
+      await worker.evaluate(() => chrome.storage.sync.set({ siteLibrary: ["beta.example", "gamma.example"] }));
+      await page.locator("#siteUndoBtn").click();
+      await page.waitForFunction(() => document.getElementById("siteUndoBtn").hidden);
+      const sites = await worker.evaluate(async () => (await chrome.storage.sync.get("siteLibrary")).siteLibrary);
+      assert.deepEqual(sites.sort(), ["alpha.example", "beta.example", "gamma.example"]);
+      assert.equal(await page.locator("#siteFilter").inputValue(), "alpha");
+      await page.locator("#siteCollection summary").click();
+      assert.equal(await page.locator("#siteFilter").isVisible(), false);
     });
 
     await t.test("French UI selection persists and updates both settings surfaces", async () => {

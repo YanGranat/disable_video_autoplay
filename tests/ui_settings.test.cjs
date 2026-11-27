@@ -66,6 +66,7 @@ for (const [surface, key, listId, inputId] of [
 class FakeElement {
   constructor(id = "") {
     this.id = id;
+    this.value = "";
     this.checked = false;
     this.attributes = new Map();
     this.listeners = new Map();
@@ -74,6 +75,8 @@ class FakeElement {
     this.classList = {
       contains: (name) => classes.has(name),
       toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name),
+      add: (name) => classes.add(name),
+      remove: (name) => classes.delete(name),
     };
   }
 
@@ -87,12 +90,14 @@ class FakeElement {
   }
 
   setAttribute(name, value) { this.attributes.set(name, value); }
+  removeAttribute(name) { this.attributes.delete(name); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   querySelectorAll() { return []; }
   appendChild(child) { this.children.push(child); }
   contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
   get lastElementChild() { return this.children.at(-1); }
   focus() { this.ownerDocument.activeElement = this; }
+  scrollIntoView() { this.scrolledIntoView = true; }
 }
 
 async function createHarness(basename, stored = {}, browserLanguage = "en") {
@@ -108,6 +113,8 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
   const elements = new Map();
   for (const match of read(`${basename}.html`).matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)) {
     const element = new FakeElement(match[1]);
+    element.hidden = /\bhidden(?:\s|>)/.test(match[0]);
+    element.disabled = /\bdisabled(?:\s|\/?>)/.test(match[0]);
     for (const attribute of match[0].matchAll(/\b([a-z][a-z0-9-]*)="([^"]*)"/g)) element.setAttribute(attribute[1], attribute[2]);
     elements.set(match[1], element);
   }
@@ -121,16 +128,24 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
   let deferTabQueries = false;
   let failWrites = false;
   let deferWrites = false;
+  let deferChannels = false;
+  let tabUrl = "https://example.com/";
+  const pendingChannels = [];
+  const navigation = [];
+  const optionViews = [];
+  const location = { hash: "" };
   const document = {
-    documentElement: {},
+    documentElement: new FakeElement("html"),
     getElementById: (id) => elements.get(id),
     querySelectorAll(selector) {
       const attribute = selector.match(/^\[([a-z0-9-]+)\]$/)?.[1];
       return attribute ? [...elements.values()].filter(element => element.getAttribute(attribute) !== null) : [];
     },
+    querySelector() { return null; },
     createElement: () => Object.assign(new FakeElement(), { ownerDocument: document }),
     addEventListener() {},
   };
+  document.documentElement.classList.add("settings-loading");
   for (const element of elements.values()) element.ownerDocument = document;
   const chrome = {
     i18n: { getUILanguage: () => browserLanguage },
@@ -157,16 +172,22 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
         async remove(key) { delete stored[key]; },
       },
     },
-    tabs: { query: () => {
-      const tabs = [{ id: 1, url: "https://example.com/" }];
+    tabs: { create: async ({ url }) => navigation.push(url), query: () => {
+      const tabs = [{ id: 1, url: tabUrl }];
       if (!deferTabQueries) return Promise.resolve(tabs);
       return new Promise((resolve) => pendingTabQueries.push(() => resolve(tabs)));
     } },
-    runtime: { openOptionsPage() {} },
+    runtime: { openOptionsPage: async () => navigation.push("options"), getManifest: () => ({ version: "test" }), getURL: (name) => `chrome-extension://fixture/${name}` },
+    extension: { getViews: () => optionViews },
   };
   const context = vm.createContext({
-    document, chrome, URL, AbortSignal, TextEncoder, navigator: { locks: lockManagers.get(stored) }, HTMLElement: FakeElement, Node: FakeElement,
-    fetch: async (url) => { channelRequests.push(url); return { ok: false }; },
+    document, chrome, URL, AbortSignal, TextEncoder, location, window: { addEventListener() {} }, navigator: { locks: lockManagers.get(stored) }, HTMLElement: FakeElement, Node: FakeElement,
+    requestAnimationFrame: callback => callback(),
+    fetch: async (url) => {
+      channelRequests.push(url);
+      if (!deferChannels) return { ok: false };
+      return new Promise(resolve => pendingChannels.push(resolve));
+    },
     setTimeout, clearTimeout,
     console: Object.fromEntries(["log", "info", "debug"].map((name) => [name, (...args) => consoleEntries.push(args)])),
   });
@@ -174,11 +195,23 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
   await new Promise((resolve) => setImmediate(resolve));
 
   return {
-    document, elements, writes, pendingReads, pendingTabQueries, pendingWrites, consoleEntries, channelRequests,
+    document, elements, writes, pendingReads, pendingTabQueries, pendingWrites, consoleEntries, channelRequests, pendingChannels, navigation, context, optionViews,
     deferReads() { deferReads = true; },
     deferTabQueries() { deferTabQueries = true; },
     failWrites(value = true) { failWrites = value; },
     deferWrites() { deferWrites = true; },
+    deferChannels() { deferChannels = true; },
+    setTabUrl(value) { tabUrl = value; },
+    async input(id, value) {
+      const input = elements.get(id);
+      input.value = value;
+      for (const callback of input.listeners.get("input") || []) await callback({ currentTarget: input, target: input });
+    },
+    async key(id, key) {
+      const input = elements.get(id);
+      for (const callback of input.listeners.get("keydown") || []) await callback({ currentTarget: input, target: input, key });
+      await flushMicrotasks();
+    },
     externalChange(key, newValue) {
       stored[key] = newValue;
       for (const listener of storageListeners.get(stored)) listener({ [key]: { newValue } }, "sync");
@@ -222,7 +255,7 @@ for (const surface of ["popup", "options"]) {
     const harness = await createHarness(surface, { uiLanguage: "en" });
     harness.failWrites();
     await harness.change("applyToShorts", true);
-    const error = harness.elements.get("settingsError");
+    const error = harness.elements.get("applyToShortsError");
     assert.equal(error.hidden, false);
     harness.failWrites(false);
     const context = vm.createContext({});
@@ -300,6 +333,9 @@ test("status messages keep independent timers and replace or clear old messages"
   assert.equal(elements.get("first").textContent, "new");
   advance(1);
   assert.equal(elements.get("first").textContent, "");
+  first("validation", { persistent: true });
+  advance(10000);
+  assert.equal(elements.get("first").textContent, "validation", "validation must not expire like a success message");
   first("clear me");
   first("");
   assert.equal(timers.size, 0, "explicitly clearing a status must cancel its timer");
@@ -430,8 +466,8 @@ for (const basename of ["popup", "options"]) {
     ui.failWrites();
     await ui.change("applyToShorts", true);
     assert.equal(ui.elements.get("applyToShorts").checked, false);
-    assert.equal(ui.elements.get("settingsError").hidden, false);
-    assert.match(ui.elements.get("settingsError").textContent, /could not/i);
+    assert.equal(ui.elements.get("applyToShortsError").hidden, false);
+    assert.match(ui.elements.get("applyToShortsError").textContent, /could not/i);
   });
 }
 
@@ -440,7 +476,7 @@ test("a failed current-site write leaves the popup usable", async () => {
   ui.failWrites();
   await ui.click("toggleCurrentSiteBtn");
   assert.equal(ui.elements.get("toggleCurrentSiteBtn").disabled, false);
-  assert.equal(ui.elements.get("settingsError").hidden, false);
+  assert.match(ui.elements.get("siteStatus").textContent, /could not/i);
 });
 
 test("concurrent popup and options library additions preserve both sites", async () => {
@@ -461,6 +497,135 @@ test("concurrent channel additions preserve both entries", async () => {
   await Promise.all([first.click("addBtn"), second.click("addBtn")]);
   assert.deepEqual(stored.allowlist.sort(), ["/@first", "/@second"]);
 });
+
+test("channel lookup admits one request, keeps a newer draft and releases busy state", async () => {
+  const stored = {};
+  const ui = await createHarness("popup", stored);
+  ui.deferChannels();
+  await ui.input("newItem", "/c/example");
+  const first = ui.click("addBtn");
+  await flushMicrotasks();
+  assert.equal(ui.elements.get("addBtn").disabled, true);
+  assert.equal(ui.elements.get("addBtn").getAttribute("aria-busy"), "true");
+  assert.match(ui.elements.get("status").textContent, /Adding/);
+  await ui.key("newItem", "Enter");
+  assert.equal(ui.channelRequests.length, 1);
+  await ui.input("newItem", "@newdraft");
+  ui.pendingChannels[0]({ ok: true, url: "https://www.youtube.com/c/example", text: async () => '<link rel="canonical" href="https://www.youtube.com/@resolved">' });
+  await first;
+  assert.deepEqual(stored.allowlist, ["/@resolved"]);
+  assert.equal(ui.elements.get("newItem").value, "@newdraft");
+  assert.equal(ui.elements.get("addBtn").disabled, false);
+  assert.equal(ui.elements.get("addBtn").getAttribute("aria-busy"), "false");
+});
+
+test("failed channel lookup can be retried and duplicate channels do not claim a new write", async () => {
+  const ui = await createHarness("popup", { allowlist: ["/@example"] });
+  await ui.input("newItem", "/c/example");
+  await ui.click("addBtn");
+  assert.equal(ui.elements.get("addBtn").disabled, false);
+  assert.equal(ui.elements.get("channelInputError").hidden, false);
+  await ui.input("newItem", "@EXAMPLE");
+  await ui.click("addBtn");
+  assert.equal(ui.writes.length, 0);
+  assert.equal(ui.elements.get("status").textContent, "Already added: /@example");
+});
+
+test("the current-channel action is only offered on YouTube", async () => {
+  const ui = await createHarness("popup");
+  assert.equal(ui.elements.get("addCurrentBtn").hidden, true);
+  ui.setTabUrl("https://www.youtube.com/watch?v=example");
+  ui.externalChange("debug", true);
+  await flushMicrotasks();
+  assert.equal(ui.elements.get("addCurrentBtn").hidden, false);
+  ui.setTabUrl("https://notyoutube.example/watch");
+  ui.externalChange("debug", false);
+  await flushMicrotasks();
+  assert.equal(ui.elements.get("addCurrentBtn").hidden, true);
+});
+
+test("website navigation includes the section before a new page loads and reuses an existing view", async () => {
+  const popup = await createHarness("popup");
+  await popup.click("manageSiteLibraryBtn");
+  assert.deepEqual(popup.navigation, ["chrome-extension://fixture/options.html#siteRules"]);
+  const options = await createHarness("options");
+  const location = { href: "chrome-extension://fixture/options.html", hash: "" };
+  popup.optionViews.push({ location, document: options.document });
+  await popup.click("manageSiteLibraryBtn");
+  assert.equal(popup.navigation.at(-1), "options");
+  assert.equal(location.hash, "siteRules");
+  assert.equal(options.document.activeElement.id, "siteRules");
+  assert.equal(options.elements.get("siteRules").scrolledIntoView, true);
+});
+
+for (const [inputId, addId, statusId, key, listId, filterId, undoId] of [
+  ["siteInput", "siteAddBtn", "siteLibraryStatus", "siteLibrary", "siteLibraryList", "siteFilter", "siteUndoBtn"],
+  ["exclusionInput", "exclusionAddBtn", "exclusionStatus", "siteExclusions", "exclusionList", "exclusionFilter", "exclusionUndoBtn"],
+]) {
+  test(`${key} clears obsolete validation when edited and filters without changing saved rules`, async () => {
+    const stored = { [key]: ["alpha.example", "beta.example"] };
+    const ui = await createHarness("options", stored);
+    await ui.input(inputId, "garbage!!");
+    await ui.click(addId);
+    assert.equal(ui.elements.get(inputId).getAttribute("aria-invalid"), "true");
+    assert.match(ui.elements.get(statusId).textContent, /valid/);
+    await ui.input(inputId, "valid.example");
+    assert.equal(ui.elements.get(inputId).getAttribute("aria-invalid"), "false");
+    assert.equal(ui.elements.get(statusId).textContent, "");
+    await ui.input(filterId, "BETA");
+    assert.equal(ui.elements.get(listId).children.length, 1);
+    assert.equal(ui.elements.get(listId).children[0].children[0].textContent, "beta.example");
+    await ui.input(filterId, "missing");
+    assert.equal(ui.elements.get(listId).children[0].textContent, "No websites match this search.");
+    assert.deepEqual(stored[key], ["alpha.example", "beta.example"]);
+    assert.equal(ui.writes.length, 0);
+    await ui.input(filterId, "");
+    assert.equal(ui.elements.get(listId).children.length, 2);
+  });
+
+  test(`${key} undo restores only the removed rule and preserves later edits in both windows`, async () => {
+    const stored = { [key]: ["alpha.example", "beta.example"] };
+    const first = await createHarness("options", stored);
+    const second = await createHarness("options", stored);
+    const button = first.elements.get(listId).children[0].children[1];
+    await button.listeners.get("click")[0]({ currentTarget: button, target: button });
+    assert.deepEqual(stored[key], ["beta.example"]);
+    assert.equal(first.elements.get(undoId).hidden, false);
+    await second.input(inputId, "gamma.example");
+    await second.click(addId);
+    first.elements.get(undoId).focus();
+    await first.click(undoId);
+    assert.deepEqual(stored[key].sort(), ["alpha.example", "beta.example", "gamma.example"]);
+    assert.equal(first.elements.get(undoId).hidden, true);
+    assert.equal(second.elements.get(listId).children.length, 3);
+    assert.equal(first.document.activeElement, first.elements.get(listId).children[0].children[1]);
+    await first.click(undoId);
+    assert.deepEqual(stored[key].sort(), ["alpha.example", "beta.example", "gamma.example"]);
+  });
+
+  test(`${key} undo does not erase later overlapping rules and a failed restore stays retryable`, async () => {
+    const stored = { [key]: ["alpha.example"] };
+    const ui = await createHarness("options", stored);
+    const remove = async () => {
+      const button = ui.elements.get(listId).children[0].children[1];
+      await button.listeners.get("click")[0]({ currentTarget: button, target: button });
+    };
+    await remove();
+    ui.failWrites();
+    await ui.click(undoId);
+    assert.equal(ui.elements.get(undoId).hidden, false);
+    assert.deepEqual(stored[key], []);
+    assert.match(ui.elements.get(statusId).textContent, /could not/);
+    ui.failWrites(false);
+    await ui.click(undoId);
+    assert.deepEqual(stored[key], ["alpha.example"]);
+    await remove();
+    ui.externalChange(key, ["sub.alpha.example"]);
+    await ui.click(undoId);
+    assert.deepEqual(stored[key], ["sub.alpha.example"]);
+    assert.match(ui.elements.get(statusId).textContent, /have changed/);
+  });
+}
 
 test("popup diagnostics redact free-form channel input", async () => {
   const ui = await createHarness("popup", { debug: true });
@@ -524,7 +689,7 @@ test("master off disables playback controls without losing their stored values",
     await ui.change("enabled", false);
     for (const key of ["applyToYouTube", "applyToOtherSites", "applyToShorts", "applyToTwitch"]) assert.equal(ui.elements.get(key).disabled, true, key);
     assert.equal(ui.elements.get("applyToShorts").checked, true);
-    if (basename === "options") assert.equal(ui.elements.get("debug").disabled, undefined);
+    if (basename === "options") assert.equal(ui.elements.get("debug").disabled, false);
     await ui.change("enabled", true);
     assert.equal(ui.elements.get("applyToShorts").disabled, false);
   }
