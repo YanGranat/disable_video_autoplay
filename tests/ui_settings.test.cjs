@@ -22,8 +22,8 @@ function fullCollection(key) {
 
 for (const [surface, key, inputId, addId, statusId] of [
   ["popup", "allowlist", "newItem", "addBtn", "channelInputError"],
+  ["popup", "siteLibrary", "siteInput", "siteAddBtn", "siteLibraryStatus"],
   ["options", "siteLibrary", "siteInput", "siteAddBtn", "siteLibraryStatus"],
-  ["options", "siteExclusions", "exclusionInput", "exclusionAddBtn", "exclusionStatus"],
 ]) {
   test(`${surface} ${key} rejects an oversized list beside the retained input`, async () => {
     const { entries, next } = fullCollection(key);
@@ -41,20 +41,20 @@ for (const [surface, key, inputId, addId, statusId] of [
 for (const [surface, key, listId, inputId] of [
   ["popup", "allowlist", "list", "newItem"],
   ["options", "siteLibrary", "siteLibraryList", "siteInput"],
-  ["options", "siteExclusions", "exclusionList", "exclusionInput"],
+  ["options", "siteExclusions", "siteLibraryList", "siteInput"],
 ]) {
   test(`${surface} ${key} preserves keyboard focus across repaint and removal`, async () => {
     const values = key === "allowlist" ? ["/@alpha", "/@beta"] : ["alpha.example", "beta.example"];
     const ui = await createHarness(surface, { [key]: values });
     const list = ui.elements.get(listId);
-    list.children[0].children[1].focus();
+    list.children[0].lastElementChild.focus();
     ui.externalChange("debug", true);
     await flushMicrotasks();
-    assert.equal(ui.document.activeElement, list.children[0].children[1]);
+    assert.equal(ui.document.activeElement, list.children[0].lastElementChild);
     for (let remaining = 1; remaining >= 0; remaining--) {
-      const button = list.children[0].children[1];
+      const button = list.children[0].lastElementChild;
       await button.listeners.get("click")[0]({ currentTarget: button, target: button });
-      assert.equal(ui.document.activeElement, remaining ? list.children[0].children[1] : ui.elements.get(inputId));
+      assert.equal(ui.document.activeElement, remaining ? list.children[0].lastElementChild : ui.elements.get(inputId));
     }
     ui.elements.get(inputId).focus();
     ui.externalChange(key, values);
@@ -93,6 +93,15 @@ class FakeElement {
   removeAttribute(name) { this.attributes.delete(name); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   querySelectorAll() { return []; }
+  querySelector(selector) {
+    const action = selector.match(/^\[data-action="([^"]+)"\]$/)?.[1];
+    for (const child of this.children) {
+      if (action && child.getAttribute("data-action") === action) return child;
+      const nested = child.querySelector(selector);
+      if (nested) return nested;
+    }
+    return null;
+  }
   appendChild(child) { this.children.push(child); }
   contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
   get lastElementChild() { return this.children.at(-1); }
@@ -139,7 +148,12 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
     getElementById: (id) => elements.get(id),
     querySelectorAll(selector) {
       const attribute = selector.match(/^\[([a-z0-9-]+)\]$/)?.[1];
-      return attribute ? [...elements.values()].filter(element => element.getAttribute(attribute) !== null) : [];
+      const all = new Set();
+      const visit = element => { all.add(element); element.children.forEach(visit); };
+      elements.forEach(visit);
+      if (attribute) return [...all].filter(element => element.getAttribute(attribute) !== null);
+      if (selector.startsWith(".")) return [...all].filter(element => (element.className || "").split(" ").includes(selector.slice(1)));
+      return [];
     },
     querySelector() { return null; },
     createElement: () => Object.assign(new FakeElement(), { ownerDocument: document }),
@@ -209,7 +223,7 @@ async function createHarness(basename, stored = {}, browserLanguage = "en") {
     },
     async key(id, key) {
       const input = elements.get(id);
-      for (const callback of input.listeners.get("keydown") || []) await callback({ currentTarget: input, target: input, key });
+      for (const callback of input.listeners.get("keydown") || []) await callback({ currentTarget: input, target: input, key, preventDefault() {} });
       await flushMicrotasks();
     },
     externalChange(key, newValue) {
@@ -233,7 +247,31 @@ async function flushMicrotasks() {
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
 }
 
+function siteRow(ui, site) {
+  return ui.elements.get("siteLibraryList").children.find(row => row.getAttribute("data-key") === site);
+}
+
+async function setSiteBlocked(ui, site, checked) {
+  const checkbox = siteRow(ui, site).querySelector('[data-action="blocking"]');
+  checkbox.checked = checked;
+  for (const callback of checkbox.listeners.get("change") || []) await callback({ currentTarget: checkbox, target: checkbox });
+}
+
 for (const surface of ["popup", "options"]) {
+  test(`${surface} site validation survives a language change in its local feedback`, async () => {
+    const ui = await createHarness(surface);
+    await ui.input("siteInput", "garbage!!");
+    await ui.key("siteInput", "Enter");
+    const old = ui.elements.get("siteLibraryStatus").textContent;
+    ui.externalChange("uiLanguage", "fr");
+    await flushMicrotasks();
+    assert.notEqual(ui.elements.get("siteLibraryStatus").textContent, old);
+    assert.match(ui.elements.get("siteLibraryStatus").textContent, /Saisissez/);
+    assert.equal(ui.elements.get("siteInput").getAttribute("aria-invalid"), "true");
+    await ui.input("siteInput", "valid.example");
+    assert.equal(ui.elements.get("siteLibraryStatus").textContent, "");
+  });
+
   test(`${surface} renders browser and saved UI languages and observes language changes`, async () => {
     const automatic = await createHarness(surface, { uiLanguage: "auto" }, "uk-UA");
     assert.equal(automatic.document.documentElement.lang, "uk");
@@ -259,7 +297,7 @@ for (const surface of ["popup", "options"]) {
     assert.equal(error.hidden, false);
     harness.failWrites(false);
     const context = vm.createContext({});
-    runScripts(context, [`ui/${surface}-strings.js`]);
+    runScripts(context, ["ui/site-rules-strings.js", `ui/${surface}-strings.js`]);
     const dictionaries = vm.runInContext("YTAPStrings", context);
     for (const language of ["de", "es", "fr", "ru", "uk", "en"]) {
       harness.externalChange("uiLanguage", language);
@@ -277,7 +315,7 @@ test("channel errors preserve their meaning across settings and language changes
   assert.equal(harness.channelRequests.length, 1);
   const error = harness.elements.get("channelInputError");
   const context = vm.createContext({});
-  runScripts(context, ["ui/popup-strings.js"]);
+  runScripts(context, ["ui/site-rules-strings.js", "ui/popup-strings.js"]);
   const dictionaries = vm.runInContext("YTAPStrings", context);
   assert.equal(error.textContent, dictionaries.en.channelResolveFailed);
   for (const language of ["de", "es", "fr", "ru", "uk", "en"]) {
@@ -390,9 +428,10 @@ for (const basename of ["popup", "options"]) {
   });
 }
 
-test("popup current-site status does not claim blocking when the master switch is off", async () => {
+test("saved current websites are managed once in the library", async () => {
   const ui = await createHarness("popup", { enabled: false, siteLibrary: ["example.com"] });
-  assert.equal(ui.elements.get("currentSiteMode").textContent, "Autoplay blocking is off on this site.");
+  assert.equal(ui.elements.get("currentSiteCard").hidden, true);
+  assert.equal(siteRow(ui, "example.com").querySelector('[data-action="blocking"]').disabled, true);
 });
 
 test("popup retains the current-site card during an active-tab refresh", async () => {
@@ -400,10 +439,8 @@ test("popup retains the current-site card during an active-tab refresh", async (
   const card = ui.elements.get("currentSiteCard");
   const details = ui.elements.get("currentSiteDetails");
   const host = ui.elements.get("currentSiteHost");
-  const mode = ui.elements.get("currentSiteMode");
-  const toggle = ui.elements.get("toggleCurrentSiteBtn");
+  const toggle = ui.elements.get("addCurrentSiteBtn");
   const previousHost = host.textContent;
-  const previousMode = mode.textContent;
   ui.deferTabQueries();
   const save = ui.change("applyToTwitch", false);
   await flushMicrotasks();
@@ -412,11 +449,10 @@ test("popup retains the current-site card during an active-tab refresh", async (
   assert.equal(card.hidden, false, "pending settings updates must not collapse the card");
   assert.equal(details.hidden, false);
   assert.equal(host.textContent, previousHost);
-  assert.equal(mode.textContent, previousMode);
   assert.equal(toggle.hidden, false);
   assert.equal(toggle.disabled, true, "the site action must wait for the current tab");
   const writesBeforeClick = ui.writes.length;
-  await ui.click("toggleCurrentSiteBtn");
+  await ui.click("addCurrentSiteBtn");
   assert.equal(ui.writes.length, writesBeforeClick, "a pending tab lookup must not edit the previous website");
   ui.pendingTabQueries[0]();
   await save;
@@ -451,13 +487,12 @@ test("popup current-site status ignores a superseded active-tab response", async
   assert.equal(ui.pendingTabQueries.length, 2);
   ui.pendingTabQueries[1]();
   await second;
-  const latestStatus = ui.elements.get("currentSiteMode").textContent;
-  assert.notEqual(latestStatus, "Autoplay blocking is off on this site.");
+  const latestStatus = ui.elements.get("currentSiteHost").textContent;
   ui.pendingTabQueries[0]();
   await first;
   assert.equal(ui.elements.get("enabled").checked, true);
-  assert.equal(ui.elements.get("currentSiteMode").textContent, latestStatus, "a stale tab lookup must not undo the newer current-site status");
-  assert.equal(ui.elements.get("toggleCurrentSiteBtn").disabled, false);
+  assert.equal(ui.elements.get("currentSiteHost").textContent, latestStatus, "a stale tab lookup must not undo the newer current-site status");
+  assert.equal(ui.elements.get("addCurrentSiteBtn").disabled, false);
 });
 
 for (const basename of ["popup", "options"]) {
@@ -474,9 +509,9 @@ for (const basename of ["popup", "options"]) {
 test("a failed current-site write leaves the popup usable", async () => {
   const ui = await createHarness("popup");
   ui.failWrites();
-  await ui.click("toggleCurrentSiteBtn");
-  assert.equal(ui.elements.get("toggleCurrentSiteBtn").disabled, false);
-  assert.match(ui.elements.get("siteStatus").textContent, /could not/i);
+  await ui.click("addCurrentSiteBtn");
+  assert.equal(ui.elements.get("addCurrentSiteBtn").disabled, false);
+  assert.match(ui.elements.get("siteLibraryStatus").textContent, /could not/i);
 });
 
 test("concurrent popup and options library additions preserve both sites", async () => {
@@ -484,7 +519,7 @@ test("concurrent popup and options library additions preserve both sites", async
   const popup = await createHarness("popup", stored);
   const options = await createHarness("options", stored);
   options.elements.get("siteInput").value = "other.example";
-  await Promise.all([options.click("siteAddBtn"), popup.click("toggleCurrentSiteBtn")]);
+  await Promise.all([options.click("siteAddBtn"), popup.click("addCurrentSiteBtn")]);
   assert.deepEqual(stored.siteLibrary.sort(), ["example.com", "other.example"]);
 });
 
@@ -544,23 +579,101 @@ test("the current-channel action is only offered on YouTube", async () => {
   assert.equal(ui.elements.get("addCurrentBtn").hidden, true);
 });
 
-test("website navigation includes the section before a new page loads and reuses an existing view", async () => {
-  const popup = await createHarness("popup");
-  await popup.click("manageSiteLibraryBtn");
-  assert.deepEqual(popup.navigation, ["chrome-extension://fixture/options.html#siteRules"]);
-  const options = await createHarness("options");
-  const location = { href: "chrome-extension://fixture/options.html", hash: "" };
-  popup.optionViews.push({ location, document: options.document });
-  await popup.click("manageSiteLibraryBtn");
-  assert.equal(popup.navigation.at(-1), "options");
-  assert.equal(location.hash, "siteRules");
-  assert.equal(options.document.activeElement.id, "siteRules");
-  assert.equal(options.elements.get("siteRules").scrolledIntoView, true);
+test("popup manages website rules without navigating to options", async () => {
+  const stored = {};
+  const popup = await createHarness("popup", stored);
+  await popup.input("siteInput", "video.example");
+  await popup.key("siteInput", "Enter");
+  assert.equal(popup.elements.get("siteLibraryList").children.length, 1);
+  assert.equal(siteRow(popup, "video.example").querySelector('[data-action="blocking"]').checked, true);
+  await setSiteBlocked(popup, "video.example", false);
+  assert.deepEqual(stored.siteExclusions, ["video.example"]);
+  assert.equal(popup.elements.get("siteLibraryList").children.length, 1);
+  const remove = siteRow(popup, "video.example").lastElementChild;
+  await remove.listeners.get("click")[0]({ currentTarget: remove, target: remove });
+  assert.equal(popup.elements.get("siteLibraryList").children.length, 0);
+  await popup.click("siteUndoBtn");
+  assert.equal(popup.elements.get("siteLibraryList").children.length, 1);
+  assert.equal(siteRow(popup, "video.example").querySelector('[data-action="blocking"]').checked, false);
+  assert.deepEqual(popup.navigation, []);
 });
+
+for (const surface of ["popup", "options"]) {
+  test(`${surface} toggles an exact rule without deleting unrelated entries`, async () => {
+    const stored = { siteLibrary: ["first.example"], siteExclusions: ["video.example", "other.example"] };
+    const ui = await createHarness(surface, stored);
+    await setSiteBlocked(ui, "video.example", true);
+    assert.deepEqual(stored.siteLibrary, ["first.example", "video.example"]);
+    assert.deepEqual(stored.siteExclusions, ["other.example"]);
+    await setSiteBlocked(ui, "video.example", false);
+    assert.deepEqual(stored.siteLibrary, ["first.example"]);
+    assert.deepEqual(stored.siteExclusions, ["other.example", "video.example"]);
+  });
+
+  test(`${surface} preserves a parent exception when a subdomain is saved`, async () => {
+    const stored = { siteExclusions: ["example.com"] };
+    const ui = await createHarness(surface, stored);
+    await ui.input("siteInput", "video.example.com");
+    await ui.key("siteInput", "Enter");
+    assert.deepEqual(stored.siteExclusions, ["example.com", "video.example.com"]);
+    assert.equal(siteRow(ui, "video.example.com").querySelector('[data-action="blocking"]').checked, false);
+    const writes = ui.writes.length;
+    await setSiteBlocked(ui, "video.example.com", true);
+    assert.equal(ui.writes.length, writes);
+    assert.match(ui.elements.get("siteLibraryStatus").textContent, /example\.com/);
+    assert.equal(siteRow(ui, "video.example.com").querySelector('[data-action="blocking"]').checked, false);
+  });
+
+  test(`${surface} a full exception collection rolls back the checkbox and keeps membership`, async () => {
+    const { entries, next: site } = fullCollection("siteExclusions");
+    const stored = { siteLibrary: [site], siteExclusions: entries };
+    const ui = await createHarness(surface, stored);
+    await setSiteBlocked(ui, site, false);
+    assert.deepEqual(stored.siteLibrary, [site]);
+    assert.deepEqual(stored.siteExclusions, entries);
+    assert.equal(siteRow(ui, site).querySelector('[data-action="blocking"]').checked, true);
+    assert.match(ui.elements.get("siteLibraryStatus").textContent, /storage limit/);
+  });
+
+  test(`${surface} repeated Enter submits one site while retaining a newer draft`, async () => {
+    const stored = {};
+    const ui = await createHarness(surface, stored);
+    ui.deferWrites();
+    await ui.input("siteInput", "first.example");
+    const submit = ui.key("siteInput", "Enter");
+    await flushMicrotasks();
+    assert.equal(ui.elements.get("siteAddBtn").disabled, true);
+    await ui.input("siteInput", "second.example");
+    const repeated = ui.key("siteInput", "Enter");
+    await flushMicrotasks();
+    assert.equal(ui.writes.length, 1);
+    ui.pendingWrites[0]();
+    await submit;
+    await flushMicrotasks();
+    if (ui.pendingWrites[1]) ui.pendingWrites[1]();
+    await repeated;
+    assert.equal(ui.writes.length, 1);
+    assert.deepEqual(stored.siteLibrary, ["first.example"]);
+    assert.equal(ui.elements.get("siteInput").value, "second.example");
+    assert.equal(ui.elements.get("siteAddBtn").disabled, false);
+  });
+
+  test(`${surface} undo cannot override a newer opposite rule`, async () => {
+    const stored = { siteLibrary: ["video.example"] };
+    const ui = await createHarness(surface, stored);
+    const button = ui.elements.get("siteLibraryList").children[0].lastElementChild;
+    await button.listeners.get("click")[0]({ currentTarget: button, target: button });
+    ui.externalChange("siteExclusions", ["video.example"]);
+    await ui.click("siteUndoBtn");
+    assert.deepEqual(stored.siteLibrary, []);
+    assert.deepEqual(stored.siteExclusions, ["video.example"]);
+    assert.match(ui.elements.get("siteLibraryStatus").textContent, /already in your library/);
+  });
+}
 
 for (const [inputId, addId, statusId, key, listId, filterId, undoId] of [
   ["siteInput", "siteAddBtn", "siteLibraryStatus", "siteLibrary", "siteLibraryList", "siteFilter", "siteUndoBtn"],
-  ["exclusionInput", "exclusionAddBtn", "exclusionStatus", "siteExclusions", "exclusionList", "exclusionFilter", "exclusionUndoBtn"],
+  ["siteInput", "siteAddBtn", "siteLibraryStatus", "siteExclusions", "siteLibraryList", "siteFilter", "siteUndoBtn"],
 ]) {
   test(`${key} clears obsolete validation when edited and filters without changing saved rules`, async () => {
     const stored = { [key]: ["alpha.example", "beta.example"] };
@@ -576,7 +689,8 @@ for (const [inputId, addId, statusId, key, listId, filterId, undoId] of [
     assert.equal(ui.elements.get(listId).children.length, 1);
     assert.equal(ui.elements.get(listId).children[0].children[0].textContent, "beta.example");
     await ui.input(filterId, "missing");
-    assert.equal(ui.elements.get(listId).children[0].textContent, "No websites match this search.");
+    assert.equal(ui.elements.get(listId).children.length, 0);
+    assert.equal(ui.elements.get("siteEmpty").textContent, "No websites match this search.");
     assert.deepEqual(stored[key], ["alpha.example", "beta.example"]);
     assert.equal(ui.writes.length, 0);
     await ui.input(filterId, "");
@@ -587,18 +701,19 @@ for (const [inputId, addId, statusId, key, listId, filterId, undoId] of [
     const stored = { [key]: ["alpha.example", "beta.example"] };
     const first = await createHarness("options", stored);
     const second = await createHarness("options", stored);
-    const button = first.elements.get(listId).children[0].children[1];
+    const button = first.elements.get(listId).children[0].lastElementChild;
     await button.listeners.get("click")[0]({ currentTarget: button, target: button });
     assert.deepEqual(stored[key], ["beta.example"]);
     assert.equal(first.elements.get(undoId).hidden, false);
     await second.input(inputId, "gamma.example");
     await second.click(addId);
+    if (key === "siteExclusions") await setSiteBlocked(second, "gamma.example", false);
     first.elements.get(undoId).focus();
     await first.click(undoId);
     assert.deepEqual(stored[key].sort(), ["alpha.example", "beta.example", "gamma.example"]);
     assert.equal(first.elements.get(undoId).hidden, true);
     assert.equal(second.elements.get(listId).children.length, 3);
-    assert.equal(first.document.activeElement, first.elements.get(listId).children[0].children[1]);
+    assert.equal(first.document.activeElement, first.elements.get(listId).children[0].lastElementChild);
     await first.click(undoId);
     assert.deepEqual(stored[key].sort(), ["alpha.example", "beta.example", "gamma.example"]);
   });
@@ -607,7 +722,7 @@ for (const [inputId, addId, statusId, key, listId, filterId, undoId] of [
     const stored = { [key]: ["alpha.example"] };
     const ui = await createHarness("options", stored);
     const remove = async () => {
-      const button = ui.elements.get(listId).children[0].children[1];
+      const button = ui.elements.get(listId).children[0].lastElementChild;
       await button.listeners.get("click")[0]({ currentTarget: button, target: button });
     };
     await remove();
@@ -677,9 +792,10 @@ test("settings views reflect storage changes while preserving unsubmitted drafts
   await second.change("applyToOtherSites", false);
   assert.equal(first.elements.get("applyToOtherSites").checked, false);
   assert.equal(first.elements.get("siteInput").value, "draft.example");
-  second.elements.get("exclusionInput").value = "excluded.example";
-  await second.click("exclusionAddBtn");
-  assert.equal(first.elements.get("exclusionList").children.at(-1).children[0].textContent, "excluded.example");
+  second.elements.get("siteInput").value = "excluded.example";
+  await second.click("siteAddBtn");
+  await setSiteBlocked(second, "excluded.example", false);
+  assert.equal(first.elements.get("siteLibraryList").children.at(-1).children[0].textContent, "excluded.example");
   assert.equal(first.elements.get("siteInput").value, "draft.example");
 });
 
@@ -704,14 +820,18 @@ test("legacy channel settings migrate on edit without losing entries", async () 
   assert.equal("whitelist" in stored, false);
 });
 
-test("the current-site action creates an exclusion under global coverage", async () => {
+test("the current-site action adds membership and the row controls blocking", async () => {
   const stored = {};
   const ui = await createHarness("popup", stored);
-  await ui.click("toggleCurrentSiteBtn");
+  await ui.click("addCurrentSiteBtn");
+  assert.deepEqual(stored.siteLibrary, ["example.com"]);
+  assert.equal(ui.elements.get("currentSiteCard").hidden, true);
+  await setSiteBlocked(ui, "example.com", false);
   assert.deepEqual(stored.siteExclusions, ["example.com"]);
-  assert.equal(ui.elements.get("toggleCurrentSiteBtn").textContent, "Remove exception for example.com");
-  await ui.click("toggleCurrentSiteBtn");
+  assert.deepEqual(stored.siteLibrary, []);
+  await setSiteBlocked(ui, "example.com", true);
   assert.deepEqual(stored.siteExclusions, []);
+  assert.deepEqual(stored.siteLibrary, ["example.com"]);
 });
 
 test("a later storage event wins after a pending flag write completes", async () => {
@@ -728,7 +848,6 @@ test("a later storage event wins after a pending flag write completes", async ()
 
 for (const [surface, inputId, actionId, key, listId, added, latest] of [
   ["options", "siteInput", "siteAddBtn", "siteLibrary", "siteLibraryList", "first.example", "latest.example"],
-  ["options", "exclusionInput", "exclusionAddBtn", "siteExclusions", "exclusionList", "first.example", "latest.example"],
   ["popup", "newItem", "addBtn", "allowlist", "list", "@first", "/@latest"],
 ]) {
   test(`${surface} list completion cannot overwrite a newer ${key} storage update`, async () => {
@@ -752,17 +871,17 @@ for (const [surface, inputId, actionId, key, listId, added, latest] of [
 
 for (const [surface, key, listId] of [
   ["options", "siteLibrary", "siteLibraryList"],
-  ["options", "siteExclusions", "exclusionList"],
+  ["options", "siteExclusions", "siteLibraryList"],
   ["popup", "allowlist", "list"],
 ]) {
   test(`${surface} removal completion preserves the latest ${key} and input draft`, async () => {
     const old = key === "allowlist" ? "/@first" : "first.example";
     const latest = key === "allowlist" ? "/@latest" : "latest.example";
     const ui = await createHarness(surface, { [key]: [old] });
-    const inputId = surface === "popup" ? "newItem" : key === "siteLibrary" ? "siteInput" : "exclusionInput";
+    const inputId = surface === "popup" ? "newItem" : "siteInput";
     const input = ui.elements.get(inputId);
     input.value = "unsubmitted-draft";
-    const button = ui.elements.get(listId).children[0].children[1];
+    const button = ui.elements.get(listId).children[0].lastElementChild;
     ui.deferWrites();
     const remove = button.listeners.get("click")[0]({ currentTarget: button, target: button });
     await flushMicrotasks();

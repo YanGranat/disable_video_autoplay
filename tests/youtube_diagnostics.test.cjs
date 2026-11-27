@@ -187,7 +187,7 @@ test("late native settlements cannot be attributed to a cancelled diagnostic win
 });
 
 test("copied playback summaries separate page resets from extension playback actions", async () => {
-  const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=one", debug: true });
+  const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=one", debug: true, pauseOnHidden: true, resumeOnVisible: true });
   playerFor(h);
   h.windowTarget.dispatchEvent(new FakeCustomEvent("yt-navigate-start"));
   await assert.rejects(h.video.play(), { name: "NotAllowedError" });
@@ -214,13 +214,20 @@ test("copied playback summaries separate page resets from extension playback act
   assert.match(text, /navigationAtStart=started.*navigationFinishes=1.*navigationFinishMs=\d+.*configUpdates=1/);
   assert.equal(h.video.playCalls, 2);
   assert.equal(h.video.pauseCalls, 0);
+  h.document.hidden = true;
+  h.document.dispatchEvent({ type: "visibilitychange" });
+  assert.equal(h.video.paused, true);
+  h.document.hidden = false;
+  h.document.dispatchEvent({ type: "visibilitychange" });
+  assert.equal(h.video.playCalls, 3, "visibility may restore playback it actually paused");
   h.video.pause();
   h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-resume"));
-  assert.equal(h.video.playCalls, 3);
+  assert.equal(h.video.playCalls, 3, "the channel command cannot override manual Pause");
+  assert.equal(h.video.paused, true);
   h.location.search = "?v=two";
   h.location.href = "https://www.youtube.com/watch?v=two";
   h.windowTarget.dispatchEvent(new FakeCustomEvent("yt-navigate-start"));
   text = copiedConsoleText(h.consoleEntries);
-  assert.match(text, /playback summary.*reason=route.*extensionActions=1.*actionKinds=play.*routeChanged=true/);
+  assert.match(text, /playback summary.*reason=route.*extensionActions=2.*actionKinds=visibility.*routeChanged=true/);
   assert.doesNotMatch(text, /private-replacement-source/);
 });

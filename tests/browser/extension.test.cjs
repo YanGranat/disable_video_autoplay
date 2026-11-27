@@ -1,4 +1,4 @@
-/* global chrome, document, window, location, requestAnimationFrame, history, MediaRecorder, getComputedStyle, matchMedia */
+/* global chrome, document, window, requestAnimationFrame, history, MediaRecorder, getComputedStyle, matchMedia */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -21,12 +21,15 @@ test("installed extension preserves media and settings contracts in Chromium", {
   let context;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      channel: "chromium", headless: true,
+      channel: "chromium", headless: process.env.YTAP_HEADED !== "1",
       ignoreDefaultArgs: ["--disable-extensions"],
       args: [`--disable-extensions-except=${extensionRoot}`, `--load-extension=${extensionRoot}`,
         "--autoplay-policy=no-user-gesture-required", "--enable-automation"],
     });
-    const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
+    const isExtensionWorker = worker => worker.url().startsWith("chrome-extension://")
+      && worker.url().endsWith("/background.js");
+    const worker = context.serviceWorkers().find(isExtensionWorker)
+      || await context.waitForEvent("serviceworker", { predicate: isExtensionWorker });
     const id = new URL(worker.url()).host;
     const page = await context.newPage();
     page.setDefaultTimeout(10000);
@@ -35,9 +38,9 @@ test("installed extension preserves media and settings contracts in Chromium", {
     assert.ok(!command.arguments.some(arg => arg.includes("AutomationControlled")));
     const origin = `http://127.0.0.1:${server.address().port}`;
 
-    async function prepare() {
+    async function prepare(url = origin) {
       await worker.evaluate(() => chrome.storage.sync.set({ enabled: true, applyToOtherSites: true }));
-      await page.goto(origin);
+      await page.goto(url);
       await page.bringToFront();
       await page.evaluate(async () => {
         const video = document.getElementById("media");
@@ -184,6 +187,108 @@ test("installed extension preserves media and settings contracts in Chromium", {
       assert.equal(await page.locator("video").evaluate(video => video.paused), false);
     });
 
+    await t.test("settings in another tab never start a paused channel video", async () => {
+      await context.route("https://www.youtube.com/**", route => route.fulfill({ contentType: "text/html", body: `<!doctype html>
+        <title>Channel playback fixture</title>
+        <ytd-watch-flexy video-id="example"><div id="movie_player" class="html5-video-player">
+          <video id="media" class="html5-main-video" controls muted loop style="width:320px;height:180px"></video>
+          <button id="play" class="ytp-play-button" aria-label="Play">Play</button>
+          <button id="pause" aria-label="Pause">Pause</button></div></ytd-watch-flexy>
+        <script>
+          document.querySelector('ytd-watch-flexy').data = {
+            currentVideoEndpoint: { watchEndpoint: { videoId: 'example' } },
+            contents: { twoColumnWatchNextResults: { results: { results: { contents: [
+              { videoSecondaryInfoRenderer: { owner: { videoOwnerRenderer: {
+                navigationEndpoint: { browseEndpoint: { canonicalBaseUrl: '/@example' } }
+              } } } }
+            ] } } } }
+          };
+          document.getElementById('movie_player').getVideoData = () => ({ video_id: 'example' });
+          window.fixture = { play: 0, playing: 0, disarm: 0, config: 0 };
+          for (const type of ['play', 'playing']) document.getElementById('media').addEventListener(type, () => window.fixture[type]++);
+          window.addEventListener('ytap-disarm', () => window.fixture.disarm++);
+          window.addEventListener('ytap-config', () => window.fixture.config++);
+          document.getElementById('pause').onclick = () => document.getElementById('media').pause();
+        </script>` }));
+      const inspect = async expression => {
+        let timer;
+        try {
+          const result = await Promise.race([
+            cdp.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture: false }),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Media inspection timed out")), 5000); }),
+          ]);
+          assert.equal(result.exceptionDetails, undefined);
+          return result.result.value;
+        } finally { clearTimeout(timer); }
+      };
+      const waitForUpdate = async (key, before) => {
+        const end = Date.now() + 5000;
+        while (await inspect(`window.fixture.${key}`) <= before) {
+          assert.ok(Date.now() < end, "the updated channel decision must reach the media document");
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+      };
+      const snapshot = () => inspect("({ ...window.fixture, paused: document.getElementById('media').paused, time: document.getElementById('media').currentTime, hidden: document.hidden })");
+      await worker.evaluate(() => chrome.storage.sync.set({ enabled: true, applyToYouTube: true, allowlist: [], pauseOnHidden: false, resumeOnVisible: false, debug: true }));
+      await prepare("https://www.youtube.com/watch?v=example");
+      assert.equal(await inspect("HTMLMediaElement.prototype.play.toString().includes('[native code]')"), false);
+      assert.equal(await inspect("document.getElementById('media').play().then(() => 'allowed', error => error.name)"), "NotAllowedError");
+      const blocked = await snapshot();
+      assert.equal(blocked.paused, true);
+      assert.equal(blocked.play, 0);
+      const opened = context.waitForEvent("page");
+      await worker.evaluate(async url => {
+        const [videoTab] = await chrome.tabs.query({ url: "https://www.youtube.com/*" });
+        await chrome.tabs.create({ windowId: videoTab.windowId, url, active: true });
+      }, `chrome-extension://${id}/popup.html`);
+      const ui = await opened;
+      try {
+        await ui.goto(`chrome-extension://${id}/popup.html`);
+        await ui.waitForFunction(() => document.documentElement.classList.contains("settings-ready"));
+        await ui.bringToFront();
+        await ui.locator("#newItem").fill("/@example");
+        await ui.locator("#addBtn").click();
+        await waitForUpdate("disarm", blocked.disarm);
+        const afterException = await snapshot();
+        const [videoTab] = await worker.evaluate(() => chrome.tabs.query({ url: "https://www.youtube.com/*" }));
+        assert.equal(videoTab.active, false, "settings must be edited from a different active tab");
+        assert.equal(afterException.paused, true);
+        assert.equal(afterException.play, 0, "adding an exception must not issue native Play in another tab");
+        assert.equal(afterException.time, blocked.time);
+
+        await page.bringToFront();
+        await page.locator("#play").click();
+        await page.waitForFunction(() => !document.getElementById("media").paused);
+        await page.locator("#pause").click();
+        const manuallyPaused = await snapshot();
+        assert.equal(manuallyPaused.paused, true);
+        await inspect("window.dispatchEvent(new Event('ytap-resume'))");
+        const afterLateDecision = await snapshot();
+        assert.equal(afterLateDecision.paused, true);
+        assert.equal(afterLateDecision.play, manuallyPaused.play, "a late channel decision must not override manual Pause");
+        assert.equal(afterLateDecision.time, manuallyPaused.time);
+        await ui.goto(`chrome-extension://${id}/options.html`);
+        await ui.waitForFunction(() => document.documentElement.classList.contains("settings-ready"));
+        await ui.bringToFront();
+        await ui.locator("#applyToKick + .slider").click();
+        await waitForUpdate("config", manuallyPaused.config);
+        let afterRefresh = await snapshot();
+        assert.equal(afterRefresh.paused, true);
+        assert.equal(afterRefresh.play, manuallyPaused.play);
+        assert.equal(afterRefresh.time, manuallyPaused.time);
+        await ui.locator("#debug + .slider").click();
+        await waitForUpdate("config", afterRefresh.config);
+        afterRefresh = await snapshot();
+        assert.equal(afterRefresh.paused, true);
+        assert.equal(afterRefresh.play, manuallyPaused.play);
+        assert.equal(afterRefresh.time, manuallyPaused.time);
+      } finally {
+        await ui.close();
+        await context.unroute("https://www.youtube.com/**");
+        await worker.evaluate(() => chrome.storage.sync.set({ allowlist: [], debug: false }));
+      }
+    });
+
     await t.test("popup and options retain keyboard focus when a rule is removed", async () => {
       await worker.evaluate(() => chrome.storage.sync.set({
         allowlist: ["/@alpha", "/@beta"], siteLibrary: ["alpha.example", "beta.example"],
@@ -217,15 +322,17 @@ test("installed extension preserves media and settings contracts in Chromium", {
             return read(...args);
           };
           window.settingsFrames = [];
-          let remaining = 12;
+          let remaining = 3;
+          const started = performance.now();
           const inspect = () => {
             const input = document.getElementById("enabled");
             if (input) {
               const slider = input.nextElementSibling;
               window.settingsFrames.push({ checked: input.checked, visible: getComputedStyle(slider).visibility,
                 transform: getComputedStyle(slider, "::before").transform });
+              if (getComputedStyle(slider).visibility === "visible") remaining--;
             }
-            if (--remaining) requestAnimationFrame(inspect);
+            if (remaining > 0 && performance.now() - started < 5000) requestAnimationFrame(inspect);
             else window.settingsFramesDone = true;
           };
           requestAnimationFrame(inspect);
@@ -244,20 +351,32 @@ test("installed extension preserves media and settings contracts in Chromium", {
       } finally { await view.close(); }
     });
 
-    await t.test("website rules open at their section and reuse a loaded options tab", async () => {
+    await t.test("popup manages website rules without opening options", async () => {
+      await worker.evaluate(() => chrome.storage.sync.set({ uiLanguage: "en", enabled: true, siteLibrary: [], siteExclusions: [] }));
       await page.goto(`chrome-extension://${id}/popup.html`);
       await page.waitForFunction(() => document.documentElement.classList.contains("settings-ready"));
-      const opened = context.waitForEvent("page");
-      await page.locator("#manageSiteLibraryBtn").click();
-      const options = await opened;
-      try {
-        await options.waitForFunction(() => location.hash === "#siteRules" && document.activeElement.id === "siteRules");
-        await options.evaluate(() => { location.hash = ""; window.scrollTo(0, 0); });
-        await page.bringToFront();
-        await page.locator("#manageSiteLibraryBtn").click();
-        await options.waitForFunction(() => location.hash === "#siteRules" && document.activeElement.id === "siteRules");
-        assert.equal(context.pages().filter(tab => tab.url().includes("options.html")).length, 1);
-      } finally { await options.close(); }
+      const pages = context.pages().length;
+      const feedback = await page.locator(".site-feedback").evaluate(node => ({ height: node.getBoundingClientRect().height, display: getComputedStyle(node).display }));
+      assert.equal(feedback.height, 0, "an empty message must not reserve a stripe");
+      assert.notEqual(feedback.display, "none", "keep the live region available for later feedback");
+      await page.locator("#siteInput").fill("video.example");
+      await page.locator("#siteInput").press("Enter");
+      const blocking = page.locator("#siteLibraryList .site-blocking");
+      await blocking.waitFor({ state: "attached" });
+      assert.equal(await blocking.isChecked(), true);
+      await blocking.focus();
+      await page.keyboard.press("Space");
+      await page.waitForFunction(() => !document.querySelector(".site-blocking").checked && document.querySelector(".site-blocking").getAttribute("aria-busy") === "false");
+      assert.equal(await page.locator("#siteLibraryList .site-item").count(), 1);
+      assert.equal(await page.evaluate(() => document.activeElement === document.querySelector(".site-blocking")), true);
+      await page.locator("#siteLibraryList button").click();
+      await page.locator("#siteUndoBtn").waitFor();
+      await page.locator("#siteUndoBtn").click();
+      await page.locator("#siteLibraryList button").waitFor();
+      assert.equal(await blocking.isChecked(), false);
+      assert.equal(context.pages().length, pages);
+      assert.equal(await page.locator(".setting-help, summary").count(), 0);
+      assert.match(await page.locator('label[for="applyToPlaylists"]').getAttribute("title"), /select yourself/);
     });
 
     await t.test("site search and undo preserve an edit from another view", async () => {
@@ -273,8 +392,9 @@ test("installed extension preserves media and settings contracts in Chromium", {
       const sites = await worker.evaluate(async () => (await chrome.storage.sync.get("siteLibrary")).siteLibrary);
       assert.deepEqual(sites.sort(), ["alpha.example", "beta.example", "gamma.example"]);
       assert.equal(await page.locator("#siteFilter").inputValue(), "alpha");
-      await page.locator("#siteCollection summary").click();
-      assert.equal(await page.locator("#siteFilter").isVisible(), false);
+      assert.equal(await page.locator('.service-footer a', { hasText: "GitHub" }).getAttribute("href"), "https://github.com/YanGranat/disable_video_autoplay");
+      const groups = await page.locator("main > section").evaluateAll(nodes => nodes.map(node => node.id));
+      assert.equal(groups.indexOf("platforms") + 1, groups.indexOf("siteRules"));
     });
 
     await t.test("French UI selection persists and updates both settings surfaces", async () => {
@@ -300,11 +420,11 @@ test("installed extension preserves media and settings contracts in Chromium", {
         await popup.waitForFunction(() => !document.getElementById("channelInputError").hidden);
         assert.equal(await popup.locator("#channelInputError").textContent(),
           "Saisissez un @identifiant YouTube ou l’URL d’une chaîne.");
-        assert.equal(await page.locator("#siteCount").textContent(), "0 site");
-        for (const [site, count] of [["alpha.example", "1 site"], ["beta.example", "2 sites"]]) {
+        assert.equal(await page.locator("#siteEmpty").textContent(), "Aucune règle de site pour le moment.");
+        for (const [site, count] of [["alpha.example", 1], ["beta.example", 2]]) {
           await page.locator("#siteInput").fill(site);
           await page.locator("#siteAddBtn").click();
-          await page.waitForFunction(expected => document.getElementById("siteCount").textContent === expected, count);
+          await page.waitForFunction(expected => document.querySelectorAll("#siteLibraryList .site-item").length === expected, count);
         }
         assert.equal(await page.locator("#siteLibraryList button").first().getAttribute("aria-label"),
           "Supprimer alpha.example");

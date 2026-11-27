@@ -125,7 +125,7 @@ that exact artifact instead of the checkout.
    - Keep both windows open, change different switches in each, then reopen them: both changes must remain saved.
    - Toggle the same switch twice quickly: its final visible state must match its saved state.
    - Rapidly turn the master switch off and back on: the current-site summary must match the final switch, even if active-tab replies arrive out of order (covered by the automated UI test).
-   - On a generic website, turn off the master switch: the current-site status must say autoplay blocking is off even if the site is in the library.
+   - On a generic website, turn off the master switch: website-library switches must be disabled without losing their saved values.
    - Add different websites or channels from two open extension windows at once: both additions must remain saved. Repeat after a failed save to ensure it does not block later edits.
 
 3. Navigate the language dropdown and all switches by keyboard.
@@ -144,6 +144,8 @@ that exact artifact instead of the checkout.
 10. Click the text label of each switch. With the master off, dependent controls must be disabled and dimmed without losing their values. Language controls, advanced settings, and the debug control in advanced settings remain available. Keep two settings windows open: flag, list, and language changes must appear without reopening either window or clearing drafts. While a popup flag is being saved, the current-site card must stay visible and the scroll position must not jump because the card was temporarily removed.
 11. Reject malformed domains, bare public suffixes (`com`, `co.uk`), and private suffixes (`github.io`); accept valid domains, IDNs, IP addresses, and localhost. Reject overlong channel handles without stretching the popup. Resolve a legacy channel URL, then retry with the network unavailable: show a translated error and keep the input. Read an unavailable current channel: show a useful recovery instruction, not the raw browser error.
 12. With Debug off, `ytap-config` must not contain `extensionVersion`. Ordinary gestures must not emit `ytap-gesture`; a trusted primary YouTube watch-link activation must still provide target-specific navigation intent.
+13. Leave a channel video paused, open extension settings in another tab, and add its channel exception. The video must stay paused. Start and pause it manually, then change an unrelated platform switch and Debug: neither update may issue Play or reset the media clock. A later navigation to an exempt channel must still allow its intercepted autoplay request once.
+14. Add a website to the library, change its blocking switch, remove it, and use Undo. Repeat in the popup and options page, with another settings window open. Each saved website must appear once, keyboard focus must stay on the edited control, and an unrelated edit must survive Undo.
 
 ## Optional visibility behavior
 

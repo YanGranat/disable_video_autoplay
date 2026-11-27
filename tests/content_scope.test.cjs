@@ -95,6 +95,7 @@ function createHarness({
   const storedSettings = { ...defaults, ...settings };
 
   let messageListener;
+  let storageListener;
   let polling = false;
   const pendingTimers = new Map();
   const chrome = {
@@ -104,7 +105,7 @@ function createHarness({
     },
     storage: {
       sync: { get: async () => settingsProvider ? settingsProvider() : ({ ...storedSettings }) },
-      onChanged: { addListener() {} },
+      onChanged: { addListener(listener) { storageListener = listener; } },
     },
   };
 
@@ -140,6 +141,11 @@ function createHarness({
     commands, document: documentTarget, location, logs, window: windowTarget,
     requestChannel: () => new Promise((resolve) => messageListener({ type: "YTAP_GET_CHANNEL" }, {}, resolve)),
     isPolling: () => polling,
+    changeSettings(patch) {
+      const changes = Object.fromEntries(Object.entries(patch).map(([key, newValue]) => [key, { oldValue: storedSettings[key], newValue }]));
+      Object.assign(storedSettings, patch);
+      storageListener(changes, "sync");
+    },
     runPendingTimers() {
       for (const [timer, callback] of Array.from(pendingTimers)) {
         clearTimeout(timer);
@@ -165,6 +171,71 @@ function deferred() {
   const promise = new Promise((done) => { resolve = done; });
   return { promise, resolve };
 }
+
+test("settings refresh changes channel coverage without issuing a playback command", async () => {
+  const h = createHarness({ search: "?v=one", channelHref: "https://www.youtube.com/@example", settings: { allowlist: ["/@example"] } });
+  await settle();
+  assert.equal(h.commands.filter(item => item.type === "ytap-resume").length, 1, "initial channel exception may release intercepted autoplay");
+  for (const patch of [{ debug: true }, { siteLibrary: ["video.example"] }, { uiLanguage: "fr" }, { applyToKick: true }, { allowlist: ["/@example", "/@other"] }]) {
+    h.commands.length = 0;
+    h.changeSettings(patch);
+    await settle();
+    assert.equal(h.commands.filter(item => item.type === "ytap-resume").length, 0, "a settings edit is not a Play request");
+  }
+});
+
+test("adding a channel exception leaves the current paused video alone", async () => {
+  const h = createHarness({ search: "?v=one", channelHref: "https://www.youtube.com/@example" });
+  await settle();
+  assert.equal(lastScopeCommand(h.commands), "ytap-arm");
+  h.commands.length = 0;
+  h.changeSettings({ allowlist: ["/@example"] });
+  await settle();
+  assert.equal(lastScopeCommand(h.commands), "ytap-disarm", "coverage must still update immediately");
+  assert.equal(h.commands.filter(item => item.type === "ytap-resume").length, 0);
+});
+
+test("unrelated settings publish configuration without restarting navigation or channel lookup", async () => {
+  const h = createHarness({ search: "?v=one", channelHref: "https://www.youtube.com/@example", settings: { allowlist: ["/@example"] } });
+  await settle();
+  for (const patch of [{ debug: true }, { applyToKick: true }, { siteLibrary: ["video.example"] }, { pauseOnHidden: true }]) {
+    h.commands.length = 0;
+    h.changeSettings(patch);
+    await settle();
+    assert.deepEqual(h.commands.map(item => item.type), ["ytap-config"]);
+  }
+});
+
+test("a settings evaluation does not consume the next navigation's channel release", async () => {
+  const h = createHarness({ search: "?v=one&list=PL1", channelHref: "https://www.youtube.com/@example", settings: { allowlist: ["/@example"] } });
+  await settle();
+  h.location.search = "?v=two&list=PL1";
+  h.location.href = "https://www.youtube.com/watch?v=two&list=PL1";
+  h.document.querySelector = selector => selector === "ytd-watch-flexy" ? {
+    getAttribute: () => "two", querySelector: () => ({ href: "https://www.youtube.com/@example" }),
+  } : null;
+  h.window.dispatchEvent(new FakeCustomEvent("ytap-gesture", { detail: { youtubeNavigationVideoId: "two" } }));
+  h.changeSettings({ applyToPlaylists: true });
+  await settle();
+  h.changeSettings({ applyToPlaylists: false });
+  await settle();
+  h.commands.length = 0;
+  h.window.dispatchEvent(new FakeCustomEvent("yt-navigate-finish"));
+  await settle();
+  assert.equal(h.commands.filter(item => item.type === "ytap-resume").length, 1);
+});
+
+test("a delayed initial read cannot overwrite a newer unrelated setting", async () => {
+  const initial = deferred();
+  let reads = 0;
+  const h = createHarness({ search: "?v=one", settingsProvider: () => reads++ === 0
+    ? initial.promise : { debug: true } });
+  h.changeSettings({ debug: true });
+  initial.resolve({ debug: false });
+  await settle();
+  assert.equal(h.commands.filter(({ type }) => type === "ytap-config").at(-1).detail.debug, true);
+  assert.equal(reads, 2);
+});
 
 test("isolated navigation preserves scope, channel ownership and the newest settings read", async () => {
   for (const [pathname, expected] of [["/@example/videos", "/@example"], ["/channel/UCEXAMPLE/streams", "/channel/ucexample"]]) {

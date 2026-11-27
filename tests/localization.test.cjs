@@ -45,7 +45,7 @@ test("UI language labels use the same names as the supported language registry",
 for (const surface of ["popup", "options"]) {
   test(`${surface} translations preserve dynamic values and English fallback`, () => {
     const context = uiContext();
-    runScripts(context, [`ui/${surface}-strings.js`]);
+    runScripts(context, ["ui/site-rules-strings.js", `ui/${surface}-strings.js`]);
     const dictionaries = vm.runInContext("YTAPStrings", context);
     for (const [locale, dictionary] of Object.entries(dictionaries)) {
       for (const [key, value] of Object.entries(dictionary)) {
@@ -61,28 +61,22 @@ for (const surface of ["popup", "options"]) {
 
 test("dependency guidance names the exact localized setting", () => {
   const context = uiContext();
-  runScripts(context, ["ui/options-strings.js"]);
+  runScripts(context, ["ui/site-rules-strings.js", "ui/options-strings.js"]);
   const strings = vm.runInContext("YTAPStrings", context);
   for (const [locale, dictionary] of Object.entries(strings)) {
     assert.ok(dictionary.resumeRequirement.includes(dictionary.optPauseHidden), locale);
   }
 });
 
-test("website counters select singular, plural and Slavic count forms", () => {
-  const context = uiContext();
-  runScripts(context, ["ui/options-strings.js"]);
-  const strings = vm.runInContext("YTAPStrings", context);
-  assert.equal(strings.de.siteLibraryCount(1), "1 Website");
-  assert.equal(strings.de.siteLibraryCount(2), "2 Websites");
-  assert.equal(strings.es.siteLibraryCount(1), "1 sitio");
-  assert.equal(strings.es.siteLibraryCount(2), "2 sitios");
-  for (const count of [0, 1, 2, 11, 21, 22, 100]) {
-    assert.equal(strings.fr.siteLibraryCount(count), `${count} ${count > 1 ? "sites" : "site"}`);
-  }
-  for (const [count, noun] of [[0, "сайтів"], [1, "сайт"], [2, "сайти"], [5, "сайтів"], [11, "сайтів"], [12, "сайтів"], [21, "сайт"], [22, "сайти"], [25, "сайтів"], [111, "сайтів"]]) {
-    assert.equal(strings.uk.siteLibraryCount(count), `${count} ${noun}`);
-  }
-  for (const [count, noun] of [[0, "сайтов"], [1, "сайт"], [2, "сайта"], [5, "сайтов"], [11, "сайтов"], [12, "сайтов"], [21, "сайт"], [22, "сайта"], [25, "сайтов"], [111, "сайтов"], [114, "сайтов"], [121, "сайт"]]) {
-    assert.equal(strings.ru.siteLibraryCount(count), `${count} ${noun}`);
+test("shared website rules use the same translations on both settings surfaces", () => {
+  const dictionaries = ["popup", "options"].map(surface => {
+    const context = uiContext();
+    runScripts(context, ["ui/site-rules-strings.js", `ui/${surface}-strings.js`]);
+    return vm.runInContext("YTAPStrings", context);
+  });
+  for (const locale of Object.keys(dictionaries[0])) {
+    for (const key of ["siteLibraryTitle", "siteAddCurrent", "siteDefaultHelp"]) {
+      assert.equal(dictionaries[0][locale][key], dictionaries[1][locale][key], locale + "/" + key);
+    }
   }
 });

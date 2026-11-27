@@ -79,7 +79,7 @@ test("settings projection preserves existing coercion and normalization", () => 
   assert.equal(settings.normalizeChannel(" /@Example/videos/ "), "/@example");
   assert.equal(settings.normalizeSite("https://www.Example.com./watch?v=one"), "example.com");
   assert.equal(settings.normalizeSite("file:///example"), "");
-  assert.deepEqual(plain(settings.normalizeSiteLibrary(["sub.example.com", "example.com", "other.example"])), ["example.com", "other.example"]);
+  assert.deepEqual(plain(settings.normalizeSiteLibrary(["sub.example.com", "example.com", "other.example"])), ["example.com", "other.example", "sub.example.com"]);
   assert.equal(settings.siteMatchesHostname("notexample.com", "example.com"), false);
   assert.equal(settings.isDedicatedSite("notyoutube.com"), false);
   assert.equal(settings.isDedicatedSite("www.youtube-nocookie.com"), true);

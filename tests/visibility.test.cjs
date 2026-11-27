@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { createHarness, trustedPlayerPointer } = require("./helpers/playback.cjs");
+const { createHarness, trustedPlayerPointer, requestPlayback } = require("./helpers/playback.cjs");
 
 function visibility(h, hidden) {
   h.document.hidden = hidden;
@@ -55,6 +55,8 @@ test("visibility uses the manually playing video rather than the first element",
 
 test("automatic channel exemptions do not count as manual visibility playback", async () => {
   const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=example", resumeOnVisible: true, pauseOnHidden: true });
+  await requestPlayback(h.video);
+  assert.equal(h.video.playCalls, 0, "the exception must release an intercepted request");
   h.windowTarget.dispatchEvent({ type: "ytap-resume" });
   await Promise.resolve();
   assert.equal(h.video.paused, false);

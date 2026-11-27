@@ -6,7 +6,7 @@ const context = vm.createContext({ URL });
 runScripts(context, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/site-rules.js"]);
 const settings = vm.runInContext("({ ...YTAPSettings, ...YTAPSiteRules })", context);
 
-test("site collections validate each input once and remove only matching parent rules", () => {
+test("site collections validate each input once and retain independent domain membership", () => {
   vm.runInContext(`
     let parserCalls = 0;
     const instrumentedParser = { parse(...args) { parserCalls += 1; return YTAPDomainParser.parse(...args); } };
@@ -17,8 +17,8 @@ test("site collections validate each input once and remove only matching parent 
   const inputs = Array.from({ length: 200 }, (_, i) => `site${i}.example.com`);
   assert.equal(rules.normalizeSiteLibrary(inputs).length, 200);
   assert.equal(vm.runInContext("parserCalls", context), 200);
-  assert.deepEqual(Array.from(rules.normalizeSiteLibrary([...inputs, "example.com", "notexample.com"])), ["example.com", "notexample.com"]);
-  assert.deepEqual(Array.from(rules.normalizeSiteLibrary(["www.ck", "a.www.ck", "localhost", "a.localhost"])), ["localhost", "www.ck"]);
+  assert.equal(rules.normalizeSiteLibrary([...inputs, "example.com", "notexample.com"]).length, inputs.length + 2);
+  assert.deepEqual(Array.from(rules.normalizeSiteLibrary(["www.ck", "a.www.ck", "localhost", "a.localhost"])), ["a.localhost", "a.www.ck", "localhost", "www.ck"]);
 });
 
 test("site rules require a valid host below a public or private suffix", () => {

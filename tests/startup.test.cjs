@@ -1,6 +1,59 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { createHarness, requestPlayback, FakeCustomEvent } = require("./helpers/playback.cjs");
+const { createHarness, requestPlayback, trustedPlayerPointer, FakeCustomEvent } = require("./helpers/playback.cjs");
+
+test("channel release does not start naturally paused media or repeat a consumed release", async () => {
+  const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=example" });
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-disarm"));
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-resume"));
+  assert.equal(h.video.playCalls, 0, "no intercepted request exists to release");
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-arm"));
+  await requestPlayback(h.video);
+  assert.equal(h.video.playCalls, 0);
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-disarm"));
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-resume"));
+  assert.equal(h.video.playCalls, 1, "one intercepted request may be released");
+  h.video.pause();
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-resume"));
+  assert.equal(h.video.paused, true, "a later manual pause must stay paused");
+  assert.equal(h.video.playCalls, 1);
+});
+
+for (const exempt of [false, true]) test(`a late channel decision cannot override manual Pause, exempt=${exempt}`, async () => {
+  const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=example" });
+  await requestPlayback(h.video);
+  if (exempt) h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-disarm"));
+  h.advanceTime(10);
+  h.windowTarget.dispatchEvent(trustedPlayerPointer(h.video));
+  await requestPlayback(h.video);
+  assert.equal(h.video.playCalls, 1);
+  h.video.pause();
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-disarm"));
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-resume"));
+  assert.equal(h.video.playCalls, 1);
+  assert.equal(h.video.paused, true);
+});
+
+test("configuration refresh preserves a channel exemption without starting media", async () => {
+  const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=example" });
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-disarm"));
+  h.configure();
+  assert.equal(h.video.playCalls, 0);
+  await requestPlayback(h.video);
+  assert.equal(h.video.playCalls, 1, "unchanged coverage must not re-arm an exempt channel");
+});
+
+test("channel release leaves held startup playback to its existing request owner", async () => {
+  const h = createHarness({ hostname: "www.youtube.com", pathname: "/watch", search: "?v=example", configureImmediately: false });
+  const pending = requestPlayback(h.video);
+  assert.equal(h.video.playCalls, 0);
+  h.configure();
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-disarm"));
+  h.windowTarget.dispatchEvent(new FakeCustomEvent("ytap-resume"));
+  await pending;
+  assert.equal(h.video.playCalls, 1, "the same held request must not be started twice");
+  assert.equal(h.video.paused, false);
+});
 
 test("startup playback waits for the final settings and scope decision", async () => {
   const startupAllowed = createHarness({ configureImmediately: false });

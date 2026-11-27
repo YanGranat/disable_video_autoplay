@@ -9,7 +9,7 @@ A Chrome extension that blocks video autoplay on YouTube, Twitch, Kick, and othe
 ## Features
 
 - Separate autoplay switches for YouTube, Twitch, and Kick.
-- Block autoplay on other websites globally or only on sites in your library. Add the current site from the popup, or manage the library in settings.
+- Block autoplay on other websites globally or only on selected sites. Manage website rules directly in the popup.
 - Exclude individual websites from general blocking. Website rules also cover subdomains; YouTube, Twitch, and Kick use their dedicated switches.
 - Allow autoplay for selected YouTube channels, with support for channel handles and channel URLs.
 - Configure YouTube Shorts, channel-page players, mobile pages, and embedded videos separately. Miniplayer and picture-in-picture playback can be left alone.
@@ -17,14 +17,14 @@ A Chrome extension that blocks video autoplay on YouTube, Twitch, Kick, and othe
 - Use standard pause behavior or an optional stop mode that also attempts to stop buffering. Audio elements are not blocked.
 - Optionally pause video when its tab is hidden and resume it when the tab becomes visible again.
 
-The popup provides platform switches and controls for the current website. Advanced settings contain the website library, exceptions, and playback preferences. Settings are saved through Chrome Sync.
+The popup provides platform switches, channel exceptions, current-site controls, and the full website rule list. Advanced settings include additional playback and tab preferences. Settings are saved through Chrome Sync.
 
 <img src="docs/screenshots/popup.png" alt="Extension popup with platform switches and website controls" width="355" />
 
 <details>
 <summary>Advanced settings and website rules</summary>
 
-<img src="docs/screenshots/options.png" alt="Advanced settings, website library, and exceptions" width="900" />
+<img src="docs/screenshots/options.png" alt="Advanced settings and website library with per-site blocking switches" width="900" />
 
 </details>
 

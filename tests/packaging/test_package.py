@@ -29,6 +29,8 @@ class PackageTests(unittest.TestCase):
             self.assertIsNone(archive.testzip())
             self.assertEqual(summary["entries"], archive.namelist())
             self.assertIn("core/site-rules.js", archive.namelist())
+            for entry in ("ui/site-rules.js", "ui/site-rules-strings.js", "ui/site-rules.css"):
+                self.assertIn(entry, archive.namelist())
             self.assertIn("icons/icon16_off.png", archive.namelist())
             for entry in archive.infolist():
                 self.assertFalse(entry.filename.startswith(("temporary_files/", "store-preparation/", "node_modules/", "tests/", "scripts/", ".git")))

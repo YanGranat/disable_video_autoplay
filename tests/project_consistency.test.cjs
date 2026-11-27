@@ -65,9 +65,9 @@ for (const basename of ["popup", "options"]) {
   const files = uiScripts(basename);
   const diagnostics = basename === "popup" ? ["core/diagnostics.js"] : [];
   const inputAdapters = basename === "popup" ? ["adapters/channel-input.js"] : [];
-  assert.deepEqual(files, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/site-rules.js", ...diagnostics, "adapters/settings-store.js", ...inputAdapters, "shared.js", `ui/${basename}-strings.js`, `${basename}.js`]);
+  assert.deepEqual(files, ["vendor/domain-parser.js", "core/site-context.js", "core/settings.js", "core/site-rules.js", ...diagnostics, "adapters/settings-store.js", ...inputAdapters, "shared.js", "ui/site-rules-strings.js", `ui/${basename}-strings.js`, "ui/site-rules.js", `${basename}.js`]);
 }
-for (const file of ["popup.js", "options.js", "shared.js", "content.js"]) {
+for (const file of ["popup.js", "options.js", "shared.js", "ui/site-rules.js", "content.js"]) {
   assert.equal(/chrome\.storage/.test(read(file)), false, `${file} must use the storage adapter`);
 }
 assert.doesNotMatch(read("background.js"), /domain-parser|site-rules|settings-store/,
@@ -78,9 +78,9 @@ for (const file of ["core/site-context.js", "core/settings.js", "core/diagnostic
 
 for (const basename of ["popup", "options"]) {
   const html = read(`${basename}.html`);
-  const script = read(`${basename}.js`);
+  const script = read(`${basename}.js`) + read("ui/site-rules.js");
   const stringsContext = vm.createContext({});
-  runScripts(stringsContext, [`ui/${basename}-strings.js`]);
+  runScripts(stringsContext, ["ui/site-rules-strings.js", `ui/${basename}-strings.js`]);
   const strings = vm.runInContext("YTAPStrings", stringsContext);
   for (const [locale, dictionary] of Object.entries(strings)) {
     assert.deepEqual(Object.keys(dictionary).sort(), Object.keys(strings.en).sort(), `${basename}/${locale} translation keys must match`);
@@ -103,8 +103,11 @@ for (const basename of ["popup", "options"]) {
   for (const id of referencedIds) {
     assert.ok(htmlIds.has(id), `${basename}.js references missing #${id}`);
   }
+  for (const id of ["siteInput", "siteAddBtn", ...(basename === "popup" ? ["newItem", "addBtn", "addCurrentBtn"] : [])]) {
+    assert.match(html, new RegExp(`<[^>]*\\bid="${id}"[^>]*\\bdisabled`), `${basename}/${id} must wait for stored settings`);
+  }
 
-  const translationKeys = new Set(matches(html, /\bdata-i18n(?:-placeholder|-aria-label)?="([^"]+)"/g));
+  const translationKeys = new Set(matches(html, /\bdata-i18n(?:-placeholder|-aria-label|-title)?="([^"]+)"/g));
   for (const key of translationKeys) {
     assert.ok(Object.hasOwn(strings.en, key), `${basename}.html uses missing English translation ${key}`);
     for (const [locale, dictionary] of Object.entries(strings)) {

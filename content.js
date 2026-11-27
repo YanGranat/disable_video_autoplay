@@ -10,6 +10,8 @@ let settings = { ...DEFAULTS };
 
 let navigationId = 0;
 let lastNavigatedKey = "";
+let lastClassifiedKey = "";
+let settingsRevision = 0;
 let lastUrl = location.href;
 let pendingYouTubeNavigation = { videoId: "", at: 0 };
 let manualPlaylistRouteKey = "";
@@ -140,8 +142,11 @@ function sendResume() {
 
 async function loadSettings() {
   try {
-    const data = await YTAPSettingsStore.read(DEFAULTS);
-    return { ...DEFAULTS, ...data };
+    for (;;) {
+      const revision = settingsRevision;
+      const data = await YTAPSettingsStore.read(DEFAULTS);
+      if (revision === settingsRevision) return { ...DEFAULTS, ...data };
+    }
   } catch (e) {
     info("loadSettings failed; keeping current settings", e?.message || e);
     if (/extension context invalidated/i.test(String(e?.message || ""))) {
@@ -268,7 +273,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function onNavigate(source) {
   if (contextInvalidated) return;
   const navKey = currentNavKey();
-  const previousNavKey = lastNavigatedKey;
+  const settingsRefresh = source === "storage-change";
 
   // Deduplicate: yt-navigate-finish + url-poll often fire for the same URL.
   // But do NOT skip when settings changed (we want to re-apply rules immediately).
@@ -276,21 +281,22 @@ async function onNavigate(source) {
     flow("onNavigate SKIPPED (duplicate)", source, { navKey });
     return;
   }
-  lastNavigatedKey = navKey;
-
   navigationId += 1;
   const navId = navigationId;
-  flow("onNavigate start", { navId, source, navKey });
+  flow("onNavigate start", `source=${source}`, { navId, source, navKey });
 
   const loadedSettings = await loadSettings();
   if (contextInvalidated || navId !== navigationId) {
     flow("onNavigate ABORTED (superseded while loading settings)", { navId, currentNavigationId: navigationId, source, navKey });
     return;
   }
+  if (navKey !== currentNavKey()) return onNavigate(source);
   settings = loadedSettings;
   sendConfig();
 
-  const manualPlaylistRoute = classifyManualPlaylistRoute(navKey, source, previousNavKey !== navKey);
+  const manualPlaylistRoute = classifyManualPlaylistRoute(navKey, source, lastClassifiedKey !== navKey);
+  lastClassifiedKey = navKey;
+  if (!settingsRefresh) lastNavigatedKey = navKey;
 
   if (settings.debug) log(`=== onNavigate #${navId}`, {
     source,
@@ -331,13 +337,26 @@ async function onNavigate(source) {
     log("Playlist: explicit navigation or matching manual selection → keep autopause");
   }
 
-  // Default behavior is pause. We arm immediately, then possibly unpause if allowlisted.
+  // Channel coverage is reconciled now; only navigation may release held autoplay.
   flow("onNavigate → sendArm", "in scope");
   sendArm();
-  await applyChannelException(navId);
+  await applyChannelException(navId, !settingsRefresh);
 }
 
-async function applyChannelException(navId) {
+function currentCoverage(data) {
+  return YTAPPlaybackPolicy.coverage(
+    YTAPSettings.toMainConfig(data, YTAPSiteRules.otherSiteRule(data, getSiteScopeHostname()).blocked),
+    pageContext.coverageFacts(manualPlaylistRouteKey === currentNavKey())
+  );
+}
+
+function allowChannelPlayback(resumeOnNavigation) {
+  sendDisarm();
+  if (resumeOnNavigation) sendResume();
+  else flow("channel exception updated", "resumeSkipped=settings-refresh");
+}
+
+async function applyChannelException(navId, resumeOnNavigation) {
   const allowlist = (settings.allowlist || []).map(normalizeChannel).filter(Boolean);
   if (allowlist.length === 0) {
     flow("onNavigate → staying paused", "allowlist empty");
@@ -348,9 +367,7 @@ async function applyChannelException(navId) {
   if (immediateChannel) {
     flow("onNavigate channel immediate", immediateChannel, "allowlisted:", allowlist.includes(immediateChannel));
     if (isChannelAllowed(immediateChannel, allowlist)) {
-      info("Allowlisted channel (immediate) → resume");
-      sendDisarm();
-      sendResume();
+      allowChannelPlayback(resumeOnNavigation);
     }
     return;
   }
@@ -368,9 +385,7 @@ async function applyChannelException(navId) {
 
   flow("onNavigate channel resolved", ch, "allowlisted:", !!(ch && allowlist.includes(ch)));
   if (ch && isChannelAllowed(ch, allowlist)) {
-    info("Allowlisted channel → resume");
-    sendDisarm();
-    sendResume();
+    allowChannelPlayback(resumeOnNavigation);
     return;
   }
 
@@ -415,17 +430,23 @@ YTAPSettingsStore.subscribe((changes, areaName) => {
   if (contextInvalidated) return;
   if (areaName !== "sync") return;
 
-  const keys = Object.keys(changes || {});
+  const keys = Object.keys(changes || {}).filter(key => Object.hasOwn(DEFAULTS, key));
   if (keys.length === 0) return;
 
-  log("storage.onChanged", keys);
+  log("storage.onChanged", `keys=${keys.join(",")}`);
 
+  const previousCoverage = currentCoverage(settings);
   for (const k of keys) {
-    settings[k] = changes[k].newValue;
+    settings[k] = changes[k].newValue ?? DEFAULTS[k];
   }
+  settingsRevision += 1;
 
   sendConfig();
-  onNavigate("storage-change").catch((e) => info("onNavigate error:", e?.message || e));
+  const nextCoverage = currentCoverage(settings);
+  if (previousCoverage.armed !== nextCoverage.armed || previousCoverage.reason !== nextCoverage.reason
+    || (isYouTubeHost() && keys.includes("allowlist"))) {
+    onNavigate("storage-change").catch((e) => info("onNavigate error:", e?.message || e));
+  }
 });
 
 const URL_POLL_MS = 800;

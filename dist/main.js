@@ -2466,6 +2466,8 @@ const YTAPYouTubeChannel = (() => {
     }
     if (decision === "authorized") {
       restoreStoppedSource(this);
+      // A delegated request consumes any earlier channel autoplay hold.
+      if (isYouTubeHost()) clearAutoplayIntervention(this);
       const promise = originalPlay.apply(this, args);
       if (debug && isYouTubeHost()) observeYouTubeManualPlay(this, promise, "authorized-controller-play", true);
       return promise;
@@ -3232,7 +3234,8 @@ const YTAPYouTubeChannel = (() => {
       return;
     }
 
-    if (!state.userStarted) {
+    // An unchanged config must not overwrite a channel exemption.
+    if (!state.userStarted && (becameReady || wasCovered !== shouldArm)) {
       setArmed(shouldArm, "config:update");
     }
     if (becameReady) {
@@ -3262,22 +3265,33 @@ const YTAPYouTubeChannel = (() => {
 
   window.addEventListener("ytap-resume", () => {
     flow("ytap-resume");
+    const v = findMainVideo();
+    if (isUserAllowedVideo(v)) {
+      flow("channel autoplay release skipped", "reason=user-controlled");
+      return;
+    }
+    if (!v || v.isConnected === false || !cfg.enabled || !shouldArmForUrl() || !hasAutoplayIntervention(v)) {
+      flow("channel autoplay release skipped", "reason=no-owned-request");
+      return;
+    }
     state.userStarted = true;
     state.userStartedRouteKey = currentRouteKey();
     setArmed(false, "ytap-resume");
 
-    const v = findMainVideo();
-    if (!v) {
-      info("ytap-resume: no video found");
+    if (startupHeldVideos.has(v) || startupPlayRequests.some(request => request.video === v)) {
+      flow("channel autoplay release deferred", "owner=startup-request", `mediaId=${mediaDebugId(v)}`);
       return;
     }
+
+    clearAutoplayIntervention(v);
+    if (pausedYouTubeVideoCarryover.video === v) clearPausedYouTubeVideoCarryover("channel-exception");
 
     // If we used "stop" mode (removed src), restore it before trying to play.
     try {
       restoreStoppedSource(v);
     } catch {}
 
-    info("ytap-resume: attempting play()", { paused: v.paused });
+    info("channel autoplay release", `mediaId=${mediaDebugId(v)}`, `paused=${v.paused}`);
     if (v.paused) {
       playbackDiagnostics.recordAction(v, "play");
       originalPlay.call(v).catch((e) => info("ytap-resume play() rejected", e?.message || e));

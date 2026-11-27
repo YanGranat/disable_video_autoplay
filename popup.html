@@ -277,7 +277,6 @@
     .btn-secondary:focus-visible,
     .btn-add:focus-visible,
     .btn-remove:focus-visible,
-    .btn-link:focus-visible,
     .footer-link:focus-visible,
     .menu-item:focus-visible {
       outline: 2px solid var(--accent);
@@ -305,29 +304,8 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .current-site-mode {
-      display: block;
-      margin-top: 2px;
-      color: var(--text-dim);
-      font-size: 11px;
-    }
     .current-site-card .btn-secondary {
       min-height: 44px;
-    }
-    .current-site-card .status {
-      margin-top: 2px;
-    }
-    .btn-link {
-      width: 100%;
-      min-height: 44px;
-      margin-top: 3px;
-      border: 0;
-      background: transparent;
-      color: var(--text-dim);
-      cursor: pointer;
-      font-size: 11px;
-      text-decoration: underline;
-      text-underline-offset: 2px;
     }
     [hidden] { display: none !important; }
 
@@ -335,8 +313,8 @@
       margin-top: 6px;
       font-size: 11px;
       color: var(--text-dim);
-      min-height: 16px;
     }
+    .status:empty { margin-top: 0; }
     .input-error { color: var(--text); }
     .add-row input[aria-invalid="true"] { border-color: var(--accent); }
     .settings-error {
@@ -350,7 +328,7 @@
 
     .channel-list {
       list-style: none;
-      margin-top: 10px;
+      margin-top: 8px;
       max-height: 180px;
       overflow-y: auto;
     }
@@ -461,11 +439,10 @@
 
     .toggle-row { flex-wrap: wrap; column-gap: 10px; }
     .toggle-label { flex: 1; min-width: 0; }
-    .setting-help { font-size: 11px; color: var(--text-dim); margin: 2px 0 5px; }
-    .setting-help summary { cursor: pointer; }
-    .setting-help p { margin-top: 4px; line-height: 1.5; color: var(--text); }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .channel-item span:focus { white-space: normal; overflow-wrap: anywhere; outline: 2px solid var(--accent); outline-offset: 2px; }
   </style>
+  <link rel="stylesheet" href="ui/site-rules.css" />
 </head>
 <body>
     <div class="header">
@@ -521,14 +498,14 @@
     <p class="action-error" id="applyToYouTubeError" role="alert" hidden></p>
     </div>
     <div class="toggle-row">
-      <label class="toggle-label" for="applyToPlaylists" data-i18n="applyToPlaylistsLabel">Pause playlist auto-next</label>
+      <label class="toggle-label" for="applyToPlaylists" data-i18n="applyToPlaylistsLabel" data-i18n-title="playlistHelp">Pause playlist auto-next</label>
       <label class="switch">
         <input type="checkbox" id="applyToPlaylists" aria-describedby="applyToPlaylistsError playlistHelp" data-i18n-aria-label="applyToPlaylistsLabel" disabled />
         <span class="slider"></span>
       </label>
     <p class="action-error" id="applyToPlaylistsError" role="alert" hidden></p>
     </div>
-    <details class="setting-help"><summary data-i18n="helpLabel">How this works</summary><p id="playlistHelp" data-i18n="playlistHelp">When off, the next playlist video plays automatically. Videos you select yourself still open paused.</p></details>
+    <p class="visually-hidden" id="playlistHelp" data-i18n="playlistHelp">When off, the next playlist video plays automatically. Videos you select yourself still open paused.</p>
     <div class="toggle-row">
       <label class="toggle-label" for="applyToShorts" data-i18n="applyToShortsLabel">Apply to Shorts</label>
       <label class="switch">
@@ -538,35 +515,27 @@
     <p class="action-error" id="applyToShortsError" role="alert" hidden></p>
     </div>
     <div class="toggle-row">
-      <label class="toggle-label" for="ignoreMiniplayer" data-i18n="ignoreMiniplayerLabel">Ignore miniplayer &amp; PiP</label>
+      <label class="toggle-label" for="ignoreMiniplayer" data-i18n="ignoreMiniplayerLabel" data-i18n-title="miniplayerHelp">Ignore miniplayer &amp; PiP</label>
       <label class="switch">
         <input type="checkbox" id="ignoreMiniplayer" aria-describedby="ignoreMiniplayerError miniplayerHelp" data-i18n-aria-label="ignoreMiniplayerLabel" disabled />
         <span class="slider"></span>
       </label>
     <p class="action-error" id="ignoreMiniplayerError" role="alert" hidden></p>
     </div>
-    <details class="setting-help"><summary data-i18n="helpLabel">How this works</summary><p id="miniplayerHelp" data-i18n="miniplayerHelp">Leaves already playing miniplayer and picture-in-picture video alone. A video paused by this extension stays paused until you press Play.</p></details>
+    <p class="visually-hidden" id="miniplayerHelp" data-i18n="miniplayerHelp">Leaves already playing miniplayer and picture-in-picture video alone. A video paused by this extension stays paused until you press Play.</p>
     <h3 class="section-title" style="margin-top:12px" data-i18n="allowlistTitle">Channel allowlist</h3>
     <div class="add-row">
-      <input id="newItem" maxlength="2048" placeholder="/@handle" data-i18n-placeholder="allowlistPlaceholder" aria-label="Channel allowlist" data-i18n-aria-label="allowlistTitle" aria-describedby="channelInputError" />
-      <button class="btn-add" id="addBtn" data-i18n="addBtn">Add</button>
+      <input id="newItem" maxlength="2048" placeholder="/@handle" data-i18n-placeholder="allowlistPlaceholder" aria-label="Channel allowlist" data-i18n-aria-label="allowlistTitle" aria-describedby="channelInputError" disabled />
+      <button class="btn-add" id="addBtn" data-i18n="addBtn" disabled>Add</button>
     </div>
     <div class="status input-error" id="channelInputError" role="alert" hidden></div>
-    <button class="btn-secondary" id="addCurrentBtn" hidden data-i18n="addCurrentBtn">Allowlist current channel</button>
+    <button class="btn-secondary" id="addCurrentBtn" hidden data-i18n="addCurrentBtn" disabled>Allowlist current channel</button>
     <div class="status" id="status" role="status" aria-live="polite"></div>
     <ul class="channel-list" id="list"></ul>
   </div>
 
   <div class="section">
-    <h2 class="section-title" data-i18n="otherSitesTitle">Other sites</h2>
-    <div class="toggle-row">
-      <label class="toggle-label" for="applyToOtherSites" data-i18n="applyToOtherSitesLabel">Block video autoplay on all other websites</label>
-      <label class="switch">
-        <input type="checkbox" id="applyToOtherSites" aria-describedby="applyToOtherSitesError" data-i18n-aria-label="applyToOtherSitesLabel" disabled />
-        <span class="slider"></span>
-      </label>
-    <p class="action-error" id="applyToOtherSitesError" role="alert" hidden></p>
-    </div>
+    <h2 class="section-title" data-i18n="platformsTitle">Other platforms</h2>
     <div class="toggle-row">
       <label class="toggle-label" for="applyToTwitch" data-i18n="applyToTwitchLabel">Disable autoplay on Twitch</label>
       <label class="switch">
@@ -583,15 +552,36 @@
       </label>
     <p class="action-error" id="applyToKickError" role="alert" hidden></p>
     </div>
+  </div>
+
+  <div class="section" id="siteRules">
+    <h2 class="section-title" data-i18n="siteLibraryCardTitle">Website rules</h2>
+    <div class="toggle-row" data-i18n-title="siteDefaultHelp">
+      <label class="toggle-label" for="applyToOtherSites" data-i18n="applyToOtherSitesLabel">Block video autoplay on all other websites</label>
+      <label class="switch">
+        <input type="checkbox" id="applyToOtherSites" aria-describedby="applyToOtherSitesError siteDefaultHelp" data-i18n-aria-label="applyToOtherSitesLabel" disabled />
+        <span class="slider"></span>
+      </label>
+      <p class="action-error" id="applyToOtherSitesError" role="alert" hidden></p>
+    </div>
+    <p class="visually-hidden" id="siteDefaultHelp" data-i18n="siteDefaultHelp">When off, only websites with blocking enabled in your library are covered. YouTube, Twitch, and Kick use their own switches.</p>
     <div class="current-site-card" id="currentSiteCard" hidden>
       <h3 class="section-title" id="currentSiteTitle" data-i18n="currentSiteTitle">Current site</h3>
       <div id="currentSiteDetails">
         <span class="current-site-host" id="currentSiteHost">...</span>
-        <span class="current-site-mode" id="currentSiteMode"></span>
-        <button class="btn-secondary" id="toggleCurrentSiteBtn" type="button" disabled></button>
+        <button class="btn-secondary" id="addCurrentSiteBtn" type="button" disabled></button>
       </div>
-      <button class="btn-link" id="manageSiteLibraryBtn" type="button"></button>
-      <div class="status" id="siteStatus" role="status" aria-live="polite"></div>
+    </div>
+    <div class="site-manager">
+      <div class="site-form">
+        <input class="site-input" id="siteInput" type="text" maxlength="2048" autocomplete="off" spellcheck="false" placeholder="example.com or a full URL" data-i18n-placeholder="siteLibraryPlaceholder" aria-label="Website" data-i18n-aria-label="siteInputLabel" aria-describedby="siteLibraryStatus" disabled />
+        <button class="site-add" id="siteAddBtn" type="button" data-i18n="siteLibraryAdd" disabled>Add website</button>
+      </div>
+      <div class="site-feedback"><div class="site-status" id="siteLibraryStatus" role="status" aria-live="polite"></div><button class="undo-btn" id="siteUndoBtn" type="button" data-i18n="undoLabel" hidden>Undo</button></div>
+      <div class="site-library-head"><h3 class="site-group-title" data-i18n="siteLibraryTitle">Website library</h3><span class="site-count" id="siteCount"></span></div>
+      <input class="site-input site-filter" id="siteFilter" type="search" autocomplete="off" aria-label="Search websites" data-i18n-aria-label="siteSearchLabel" placeholder="Search websites" data-i18n-placeholder="siteSearchLabel" hidden />
+      <ul class="site-list" id="siteLibraryList"></ul>
+      <p class="site-empty" id="siteEmpty"></p>
     </div>
   </div>
 
@@ -608,7 +598,9 @@
   <script src="adapters/settings-store.js"></script>
   <script src="adapters/channel-input.js"></script>
   <script src="shared.js"></script>
+  <script src="ui/site-rules-strings.js"></script>
   <script src="ui/popup-strings.js"></script>
+  <script src="ui/site-rules.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

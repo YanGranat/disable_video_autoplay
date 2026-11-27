@@ -30,13 +30,7 @@ const YTAPSiteRules = (() => {
   }
 
   function normalizeSiteLibrary(items) {
-    const unique = new Set((Array.isArray(items) ? items : []).map(normalizeSite).filter(Boolean));
-    return [...unique].filter((site) => {
-      for (let dot = site.indexOf('.'); dot !== -1; dot = site.indexOf('.', dot + 1)) {
-        if (unique.has(site.slice(dot + 1))) return false;
-      }
-      return true;
-    }).sort();
+    return [...new Set((Array.isArray(items) ? items : []).map(normalizeSite).filter(Boolean))].sort();
   }
 
   function siteMatchesHostname(hostname, site) {
@@ -60,8 +54,7 @@ const YTAPSiteRules = (() => {
     return { blocked: settings.applyToOtherSites !== false, source: "global", rule: "" };
   }
 
-  // A domain rule covers its subdomains. Removing an inherited exclusion must
-  // explicitly identify that parent rule in the UI.
+  // Keep explicit membership separate from the default for unsaved websites.
   function setSiteBlocking(settings, hostname, blocked) {
     const host = normalizeSite(hostname);
     if (!host || YTAPSiteContext.platform(host) !== "other") return null;
@@ -71,9 +64,11 @@ const YTAPSiteRules = (() => {
       siteLibrary: siteLibrary.filter((rule) => rule !== host),
       siteExclusions: normalizeSiteLibrary([...siteExclusions, host]),
     };
+    const parent = siteExclusions.find(rule => rule !== host && YTAPSiteContext.matchesHostname(host, rule));
+    if (parent) throw Object.assign(new Error("Parent exception exists"), { code: "SITE_PARENT_EXCEPTION", site: parent });
     return {
-      siteLibrary: settings.applyToOtherSites !== false ? siteLibrary : normalizeSiteLibrary([...siteLibrary, host]),
-      siteExclusions: siteExclusions.filter((rule) => !YTAPSiteContext.matchesHostname(host, rule)),
+      siteLibrary: normalizeSiteLibrary([...siteLibrary, host]),
+      siteExclusions: siteExclusions.filter((rule) => rule !== host),
     };
   }
 

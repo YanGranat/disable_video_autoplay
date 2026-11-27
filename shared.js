@@ -3,7 +3,7 @@
  * Settings values, persistence and diagnostic privacy have separate owners.
  */
 /* global YTAPSettingsStore, YTAPSettings */
-/* exported resolveUiLanguage, makeTranslator, applyI18n, createStatusSetter, initLanguageDropdown, createSettingsView, applySettingsAvailability, preserveListFocus, finishSettingsLoad, openSettingsSection, showSettingsError, clearSettingsError */
+/* exported resolveUiLanguage, makeTranslator, applyI18n, createStatusSetter, initLanguageDropdown, createSettingsView, applySettingsAvailability, preserveListFocus, finishSettingsLoad, showSettingsError, clearSettingsError */
 
 const $ = (id) => document.getElementById(id);
 
@@ -82,6 +82,10 @@ function applyI18n(t) {
     const key = el.getAttribute("data-i18n-aria-label");
     if (!key) return;
     el.setAttribute("aria-label", t(key));
+  });
+
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    el.title = t(el.getAttribute("data-i18n-title"));
   });
 
   const dd = $("uiLanguageDropdown");
@@ -186,12 +190,14 @@ function preserveListFocus(list, input) {
   const rows = Array.from(list.children);
   const index = rows.findIndex((row) => row.contains(document.activeElement));
   const key = rows[index]?.getAttribute("data-key");
+  const action = document.activeElement?.getAttribute?.("data-action");
   return () => {
     if (index < 0) return;
     const nextRows = Array.from(list.children).filter((row) => row.getAttribute("data-key") !== null);
     const row = nextRows.find((item) => item.getAttribute("data-key") === key)
       || nextRows[Math.min(index, nextRows.length - 1)];
-    (row?.lastElementChild || input)?.focus();
+    const control = action ? row?.querySelector?.(`[data-action="${action}"]`) : null;
+    (control || row?.lastElementChild || input)?.focus();
   };
 }
 
@@ -234,21 +240,6 @@ function finishSettingsLoad() {
   root.classList.remove("settings-loading");
   document.querySelector("main")?.setAttribute("aria-busy", "false");
   requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add("settings-ready")));
-}
-
-async function openSettingsSection(id) {
-  const url = chrome.runtime.getURL("options.html");
-  const options = chrome.extension.getViews({ type: "tab" }).find((view) =>
-    view.location.href.split("#")[0] === url);
-  if (!options) {
-    await chrome.tabs.create({ url: `${url}#${encodeURIComponent(id)}` });
-    return;
-  }
-  await chrome.runtime.openOptionsPage();
-  options.location.hash = id;
-  const section = options.document.getElementById(id);
-  section?.scrollIntoView({ block: "start" });
-  section?.focus({ preventScroll: true });
 }
 
 // Storage events update the current view without replacing input drafts.
@@ -308,10 +299,11 @@ function applySettingsAvailability(data) {
     const input = $(id);
     if (input) input.disabled = !data.enabled || data.applyToYouTube === false || input.getAttribute("aria-busy") === "true";
   }
-  for (const id of ["siteInput", "siteAddBtn", "exclusionInput", "exclusionAddBtn", "siteUndoBtn", "exclusionUndoBtn", "toggleCurrentSiteBtn"]) {
+  for (const id of ["siteInput", "siteAddBtn", "siteUndoBtn", "addCurrentSiteBtn"]) {
     const input = $(id);
     if (input) input.disabled = !data.enabled || input.getAttribute("aria-busy") === "true";
   }
   for (const button of document.querySelectorAll(".btn-remove")) button.disabled = !data.enabled || data.applyToYouTube === false;
   for (const button of document.querySelectorAll(".site-remove")) button.disabled = !data.enabled;
+  for (const checkbox of document.querySelectorAll(".site-blocking")) checkbox.disabled = !data.enabled;
 }
