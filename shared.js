@@ -11,6 +11,7 @@ const UI_LANGUAGES = Object.freeze({
   de: "Deutsch",
   en: "English",
   es: "Español",
+  fr: "Français",
   ru: "Русский",
   uk: "Українська",
 });

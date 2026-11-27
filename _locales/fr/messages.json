@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Disable video autoplay"
+  },
+  "extensionDescription": {
+    "message": "Bloque la lecture automatique des vidéos sur tous les sites ou uniquement sur ceux de votre choix."
+  },
+  "actionTitle": {
+    "message": "Disable video autoplay"
+  }
+}

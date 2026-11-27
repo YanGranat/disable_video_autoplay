@@ -207,6 +207,48 @@ test("installed extension preserves media and settings contracts in Chromium", {
       }
     });
 
+    await t.test("French UI selection persists and updates both settings surfaces", async () => {
+      await worker.evaluate(() => chrome.storage.sync.set({
+        uiLanguage: "en", siteLibrary: [], siteExclusions: [], allowlist: [],
+      }));
+      const popup = await context.newPage();
+      try {
+        await popup.goto(`chrome-extension://${id}/popup.html`);
+        await page.goto(`chrome-extension://${id}/options.html`);
+        await page.waitForFunction(() => document.documentElement.lang === "en");
+        await popup.waitForFunction(() => document.documentElement.lang === "en");
+        await page.locator("#uiLanguageBtn").click();
+        await page.getByRole("option", { name: "Français", exact: true }).click();
+        for (const surface of [popup, page]) {
+          await surface.waitForFunction(() => document.documentElement.lang === "fr");
+          assert.equal(await surface.locator("#uiLanguageValue").textContent(), "Français");
+          assert.equal(await surface.locator("#enabled").getAttribute("aria-label"), "Activé");
+        }
+        assert.equal(await popup.locator("#newItem").getAttribute("placeholder"), "/@identifiant");
+        await popup.locator("#newItem").fill("not a channel");
+        await popup.locator("#addBtn").click();
+        await popup.waitForFunction(() => !document.getElementById("channelInputError").hidden);
+        assert.equal(await popup.locator("#channelInputError").textContent(),
+          "Saisissez un @identifiant YouTube ou l’URL d’une chaîne.");
+        assert.equal(await page.locator("#siteCount").textContent(), "0 site");
+        for (const [site, count] of [["alpha.example", "1 site"], ["beta.example", "2 sites"]]) {
+          await page.locator("#siteInput").fill(site);
+          await page.locator("#siteAddBtn").click();
+          await page.waitForFunction(expected => document.getElementById("siteCount").textContent === expected, count);
+        }
+        assert.equal(await page.locator("#siteLibraryList button").first().getAttribute("aria-label"),
+          "Supprimer alpha.example");
+        assert.equal(await worker.evaluate(async () => (await chrome.storage.sync.get("uiLanguage")).uiLanguage), "fr");
+        for (const surface of [popup, page]) {
+          await surface.reload();
+          await surface.waitForFunction(() => document.documentElement.lang === "fr");
+        }
+      } finally {
+        await popup.close();
+        await worker.evaluate(() => chrome.storage.sync.set({ uiLanguage: "auto" }));
+      }
+    });
+
     await t.test("keyboard focus and forced-color switches remain distinguishable", async () => {
       await page.setViewportSize({ width: 360, height: 600 });
       for (const entry of ["popup", "options"]) {

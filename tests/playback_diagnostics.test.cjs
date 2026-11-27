@@ -256,3 +256,62 @@ test("closed-session summaries are complete after caps and cannot revive after d
   f.diagnostic.reset("debug-off");
   assert.equal(f.lines.length, before);
 });
+
+test("source write observations distinguish assigned and selected values before delegation", () => {
+  const f = fixture();
+  const first = "blob:https://media.example/first-private";
+  const next = "blob:https://media.example/next-private";
+  f.video.src = first;
+  f.video.currentSrc = first;
+  f.diagnostic.begin(f.video);
+  const beforeCalls = f.calls.length;
+  f.video.src = first;
+  f.video.src = next;
+  f.video.src = next;
+  const writes = f.lines.filter(line => line.includes("operation=src-set "));
+  assert.equal(writes.length, 3);
+  assert.match(writes[0], /targetKind=blob targetMatchesAssigned=true targetMatchesCurrent=true/);
+  assert.match(writes[1], /targetKind=blob targetMatchesAssigned=false targetMatchesCurrent=false/);
+  assert.match(writes[2], /targetKind=blob targetMatchesAssigned=true targetMatchesCurrent=false/);
+  assert.equal(f.calls.length - beforeCalls, 3);
+  assert.equal(f.video.src, next);
+  assert.doesNotMatch(f.lines.join("\n"), /media\.example|first-private|next-private/);
+  f.diagnostic.reset();
+});
+
+test("source write metadata cannot coerce arguments or block a setter when getters fail", () => {
+  const f = fixture();
+  let coerced = 0;
+  const value = { toString() { coerced++; return "private-marker"; } };
+  f.diagnostic.begin(f.video);
+  f.video.src = value;
+  assert.equal(coerced, 0);
+  assert.equal(f.calls.at(-1)[2], value);
+  assert.match(f.lines.at(-1), /targetKind=object targetMatchesAssigned=unknown targetMatchesCurrent=unknown/);
+  Object.defineProperty(f.video, "src", { configurable: true, get() { throw f.failure; } });
+  Object.getOwnPropertyDescriptor(f.Media.prototype, "src").set.call(f.video, "https://media.example/next");
+  assert.equal(f.calls.at(-1)[2], "https://media.example/next");
+  assert.match(f.lines.at(-1), /targetKind=network targetMatchesAssigned=unknown targetMatchesCurrent=unknown/);
+  assert.doesNotMatch(f.lines.join("\n"), /private-marker|media\.example|native-operation-failure/);
+  f.diagnostic.reset();
+});
+
+test("source comparisons stop at the detail cap and never inspect unrelated media", () => {
+  const f = fixture();
+  let reads = 0;
+  Object.defineProperty(f.video, "currentSrc", { get() { reads++; return ""; } });
+  Object.defineProperty(f.other, "currentSrc", { get() { throw new Error("unrelated read"); } });
+  f.diagnostic.begin(f.video);
+  f.video.src = "";
+  assert.match(f.lines.at(-1), /targetKind=empty targetMatchesAssigned=unknown targetMatchesCurrent=true/);
+  assert.equal(reads, 1);
+  f.other.src = "https://media.example/other";
+  for (let i = 0; i < 23; i++) f.video.load();
+  const count = f.lines.length;
+  f.video.src = "https://media.example/next";
+  assert.equal(reads, 1);
+  assert.equal(f.lines.length, count);
+  f.diagnostic.reset("debug-off");
+  f.video.src = "https://media.example/after";
+  assert.equal(reads, 1);
+});

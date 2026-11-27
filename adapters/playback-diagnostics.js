@@ -81,7 +81,29 @@ const YTAPPlaybackDiagnostics = Object.freeze({
       }).join(">") || "unknown";
     }
 
-    function record(video, operation, stack) {
+    function sourceValueKind(value) {
+      if (value === null) return "null";
+      if (typeof value !== "string") return typeof value === "object" ? "object" : "unknown";
+      if (!value) return "empty";
+      if (value.startsWith("blob:")) return "blob";
+      if (/^https?:\/\//.test(value)) return "network";
+      if (value.startsWith("data:")) return "data";
+      return "other";
+    }
+
+    function sourceWriteDetails(video, name, value) {
+      const targetKind = name === "removeAttribute" ? "removed" : sourceValueKind(value);
+      let assigned = "unknown";
+      let selected = "unknown";
+      // Compare strings literally before delegation, without coercion or URL normalization.
+      if (typeof value === "string" && name !== "srcObject-set" && name !== "removeAttribute") {
+        try { const src = video.src; if (typeof src === "string") assigned = value === src; } catch {}
+        try { const src = video.currentSrc; if (typeof src === "string") selected = value === src; } catch {}
+      }
+      return [`targetKind=${targetKind}`, `targetMatchesAssigned=${assigned}`, `targetMatchesCurrent=${selected}`];
+    }
+
+    function record(video, operation, stack, detail = []) {
       const window = current(video);
       if (!window || window.remaining <= 0) return;
       window.remaining--;
@@ -89,17 +111,18 @@ const YTAPPlaybackDiagnostics = Object.freeze({
         // Source resets may delegate through several player layers.
         const depth = operation === "play-request" || operation === "pause" ? 3 : 8;
         emit("YouTube media operation", `operation=${operation}`, `elapsedMs=${Math.round(now() - window.at)}`,
-          `caller=${stack ? callerSummary(stack, depth) : "unobserved"}`, ...snapshot(video));
+          `caller=${stack ? callerSummary(stack, depth) : "unobserved"}`, ...detail, ...snapshot(video));
         if (!window.remaining) emit("YouTube media operations capped", "limit=24");
       } catch {}
     }
 
-    function operation(video, name) {
+    function operation(video, name, value) {
       try {
         const window = current(video);
         if (!window) return;
-        if (["src-set", "srcObject-set", "setAttribute", "removeAttribute"].includes(name)) window.writes++;
-        if (window.remaining > 0) record(video, name, new Error().stack);
+        const sourceWrite = ["src-set", "srcObject-set", "setAttribute", "removeAttribute"].includes(name);
+        if (sourceWrite) window.writes++;
+        if (window.remaining > 0) record(video, name, new Error().stack, sourceWrite ? sourceWriteDetails(video, name, value) : []);
       } catch {}
     }
 
@@ -140,7 +163,7 @@ const YTAPPlaybackDiagnostics = Object.freeze({
       }
       for (const key of ["src", "srcObject"]) {
         if (replace(mediaPrototype, key, "set", original => function (...args) {
-          operation(this, `${key}-set`);
+          operation(this, `${key}-set`, args[0]);
           return Reflect.apply(original, this, args);
         })) installed.push(key);
       }
@@ -148,7 +171,7 @@ const YTAPPlaybackDiagnostics = Object.freeze({
         if (replace(elementPrototype, key, "value", original => function (...args) {
           // Do not coerce attribute names twice: custom coercion can have effects.
           if (typeof args[0] === "string" && args[0].toLowerCase() === "src") {
-            operation(this, key);
+            operation(this, key, key === "setAttribute" ? args[1] : undefined);
           }
           return Reflect.apply(original, this, args);
         })) installed.push(key);

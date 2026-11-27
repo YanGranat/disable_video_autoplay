@@ -209,7 +209,7 @@ for (const surface of ["popup", "options"]) {
     const harness = await createHarness(surface, stored, "es-ES");
     assert.equal(harness.document.documentElement.lang, "de");
     assert.equal(stored.uiLanguage, "de");
-    for (const language of ["es", "ru", "uk", "en", "de"]) {
+    for (const language of ["es", "fr", "ru", "uk", "en", "de"]) {
       harness.externalChange("uiLanguage", language);
       await flushMicrotasks();
       assert.equal(harness.document.documentElement.lang, language);
@@ -228,7 +228,7 @@ for (const surface of ["popup", "options"]) {
     const context = vm.createContext({});
     runScripts(context, [`ui/${surface}-strings.js`]);
     const dictionaries = vm.runInContext("YTAPStrings", context);
-    for (const language of ["de", "es", "ru", "uk", "en"]) {
+    for (const language of ["de", "es", "fr", "ru", "uk", "en"]) {
       harness.externalChange("uiLanguage", language);
       await flushMicrotasks();
       assert.equal(error.hidden, false, "changing language must not dismiss an unresolved error");
@@ -247,7 +247,7 @@ test("channel errors preserve their meaning across settings and language changes
   runScripts(context, ["ui/popup-strings.js"]);
   const dictionaries = vm.runInContext("YTAPStrings", context);
   assert.equal(error.textContent, dictionaries.en.channelResolveFailed);
-  for (const language of ["de", "es", "ru", "uk", "en"]) {
+  for (const language of ["de", "es", "fr", "ru", "uk", "en"]) {
     harness.externalChange("uiLanguage", language);
     await flushMicrotasks();
     assert.equal(error.hidden, false);

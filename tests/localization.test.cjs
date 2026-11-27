@@ -12,7 +12,8 @@ function uiContext(browserLanguage = "en") {
 test("automatic UI language matches regional tags and falls back to English", () => {
   for (const [input, expected] of [
     ["de-DE", "de"], ["de_CH", "de"], ["ES-419", "es"], ["uk-UA", "uk"],
-    ["ru-RU", "ru"], ["en-US", "en"], ["fr-FR", "en"], ["rubbish", "en"], ["", "en"],
+    ["ru-RU", "ru"], ["en-US", "en"], ["fr-FR", "fr"], ["fr-CA", "fr"], ["FR_ch", "fr"],
+    ["it-IT", "en"], ["rubbish", "en"], ["", "en"],
   ]) {
     assert.equal(vm.runInContext('resolveUiLanguage("auto")', uiContext(input)), expected);
   }
@@ -23,7 +24,7 @@ test("automatic UI language matches regional tags and falls back to English", ()
 
 test("saved UI choices override the browser language without modifying the preference", () => {
   const context = uiContext("uk-UA");
-  for (const language of ["de", "en", "es", "ru", "uk"]) {
+  for (const language of ["de", "en", "es", "fr", "ru", "uk"]) {
     context.preference = language;
     assert.equal(vm.runInContext("resolveUiLanguage(preference)", context), language);
     assert.equal(context.preference, language);
@@ -66,6 +67,9 @@ test("website counters select singular, plural and Slavic count forms", () => {
   assert.equal(strings.de.siteLibraryCount(2), "2 Websites");
   assert.equal(strings.es.siteLibraryCount(1), "1 sitio");
   assert.equal(strings.es.siteLibraryCount(2), "2 sitios");
+  for (const count of [0, 1, 2, 11, 21, 22, 100]) {
+    assert.equal(strings.fr.siteLibraryCount(count), `${count} ${count > 1 ? "sites" : "site"}`);
+  }
   for (const [count, noun] of [[0, "сайтів"], [1, "сайт"], [2, "сайти"], [5, "сайтів"], [11, "сайтів"], [12, "сайтів"], [21, "сайт"], [22, "сайти"], [25, "сайтів"], [111, "сайтів"]]) {
     assert.equal(strings.uk.siteLibraryCount(count), `${count} ${noun}`);
   }
