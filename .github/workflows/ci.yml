@@ -24,3 +24,16 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run check
+      - name: Install Chromium
+        if: runner.os == 'Linux'
+        run: npx playwright install chromium --no-shell
+      - name: Test packaging
+        if: runner.os == 'Linux'
+        run: npm run test:package
+      - name: Test packaged extension in Chromium
+        if: runner.os == 'Linux'
+        env:
+          YTAP_EXTENSION_ROOT: ${{ github.workspace }}/temporary_files/extension
+        run: |
+          npm run package -- --output temporary_files/extension.zip --extract-to temporary_files/extension
+          npm run test:browser
